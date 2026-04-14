@@ -1,32 +1,64 @@
 import zhipuai
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
 
 class AIGenerator:
     """Handles interactions with Zhipu AI API for generating responses"""
 
     # Static system prompt to avoid rebuilding on each call
-    SYSTEM_PROMPT = """ You are an AI assistant specialized in course materials and educational content with access to a comprehensive search tool for course information.
+    SYSTEM_PROMPT = """You are a course assistant with access to course materials through search tools.
 
-Search Tool Usage:
-- Use the search tool **only** for questions about specific course content or detailed educational materials
-- **One search per query maximum**
-- Synthesize search results into accurate, fact-based responses
-- If search yields no results, state this clearly without offering alternatives
+**CRITICAL: Tool Usage Requirement**
+- You MUST use the appropriate tool for course-related questions
+- Do NOT answer from your training data - always search first
 
-Response Protocol:
-- **General knowledge questions**: Answer using existing knowledge without searching
-- **Course-specific questions**: Search first, then answer
-- **No meta-commentary**:
- - Provide direct answers only — no reasoning process, search explanations, or question-type analysis
- - Do not mention "based on the search results"
+**Sequential Tool Calling:**
+- You can call up to 2 tools consecutively to answer complex questions
+- Use sequential calls when:
+  * First tool provides information needed for a second tool
+  * User asks about multiple topics that require different tools
+  * First search returns insufficient or incomplete results
+- Examples of sequential calling:
+  * "What courses cover RAG and what are their outlines?"
+    → First call: search_course_content(query="RAG")
+    → Second call: get_course_outline for found courses
+  * "Tell me about MCP and show me the course structure"
+    → First call: search_course_content(query="MCP")
+    → Second call: get_course_outline(course_title="Introduction to MCP")
 
+**Tool Selection:**
 
-All responses must be:
-1. **Brief, Concise and focused** - Get to the point quickly
-2. **Educational** - Maintain instructional value
-3. **Clear** - Use accessible language
-4. **Example-supported** - Include relevant examples when they aid understanding
-Provide only the direct answer to what was asked.
+1. **search_course_content** - Use for questions about course content:
+   - Technical concepts, explanations, definitions
+   - "What is RAG?", "How does Chroma work?", "Explain MCP"
+   - Specific topics within course materials
+   - Parameters: query (required), course_name (optional), lesson_number (optional)
+
+2. **get_course_outline** - Use for questions about course structure:
+   - "Show me the outline", "What lessons are in this course?"
+   - "Course structure", "Course overview", "List of lessons"
+   - Returns: course title, course link, instructor, and complete lesson list with lesson numbers and titles
+   - Parameters: course_title (required)
+
+**Questions that DON'T require tools:**
+- Greetings, "how do you work", system questions
+- General conversation not related to course content
+
+**Tool Calling Protocol:**
+1. Analyze the user's question to determine which tool(s) are needed
+2. For single-tool questions: make one appropriate tool call
+3. For multi-tool questions:
+   - Make the first tool call with relevant parameters
+   - Use results to inform the second tool call
+   - Maximum 2 consecutive tool calls allowed
+4. After receiving tool results, formulate your answer based ONLY on those results
+5. If no results found, state this clearly
+6. Always use tool results - never fabricate information
+
+**Response Format:**
+- Direct, concise answers
+- Based on tool results only
+- Educational and clear
+- No meta-commentary about the tool process
 """
 
     def __init__(self, api_key: str, model: str):
@@ -36,7 +68,8 @@ Provide only the direct answer to what was asked.
     def generate_response(self, query: str,
                          conversation_history: Optional[str] = None,
                          tools: Optional[List] = None,
-                         tool_manager=None) -> str:
+                         tool_manager=None,
+                         max_rounds: int = 2) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
 
@@ -45,6 +78,7 @@ Provide only the direct answer to what was asked.
             conversation_history: Previous messages for context
             tools: Available tools the AI can use
             tool_manager: Manager to execute tools
+            max_rounds: Maximum number of tool calling rounds (default: 2)
 
         Returns:
             Generated response as string
@@ -72,48 +106,111 @@ Provide only the direct answer to what was asked.
         # Add tools if available
         if tools:
             api_params["tools"] = tools
-            api_params["tool_choice"] = {"type": "auto", "function": {"name": tools[0]["function"]["name"]}}
 
         # Get response from Zhipu AI
         response = self.client.chat.completions.create(**api_params)
 
         # Handle tool execution if needed
         if response.choices[0].message.tool_calls and tool_manager:
-            return self._handle_tool_execution(response, messages, tool_manager)
+            return self._handle_tool_execution(response, messages, tool_manager, max_rounds)
 
         # Return direct response
         return response.choices[0].message.content
 
-    def _handle_tool_execution(self, initial_response, messages: List[Dict], tool_manager):
+    def _handle_tool_execution(self, initial_response, messages: List[Dict],
+                              tool_manager, max_rounds: int = 2) -> str:
         """
-        Handle execution of tool calls and get follow-up response.
+        Handle sequential tool execution with up to 2 rounds.
 
         Args:
             initial_response: The response containing tool use requests
             messages: Existing message history
             tool_manager: Manager to execute tools
+            max_rounds: Maximum number of tool calling rounds (default: 2)
 
         Returns:
             Final response text after tool execution
         """
+        current_messages = messages.copy()
+        current_response = initial_response
+        current_round = 0
+        tools = tool_manager.get_tool_definitions()
 
-        # Add AI's tool use response
+        # 循环处理最多max_rounds轮工具调用
+        while current_round < max_rounds:
+            # 终止条件1: AI不想要使用工具
+            if not current_response.choices[0].message.tool_calls:
+                break
+
+            # 执行当前轮的工具
+            try:
+                assistant_message, tool_results = self._execute_tools_round(
+                    current_response, tool_manager
+                )
+
+                # 更新消息历史
+                current_messages.append(assistant_message)
+                current_messages.extend(tool_results)
+
+                # 累积源
+                tool_manager.accumulate_sources()
+
+                # 终止条件2: 工具执行失败
+                if self._has_execution_errors(tool_results):
+                    break
+
+            except Exception as e:
+                # 处理工具执行异常
+                print(f"Tool execution error: {e}")
+                break
+
+            # 准备下一轮API调用
+            current_round += 1
+            if current_round >= max_rounds:
+                break
+
+            # 进行下一轮API调用（保持工具可用）
+            current_response = self._make_api_call(current_messages, tools=tools)
+
+        # 最终API调用（不包含工具）
+        final_response = self._make_api_call(current_messages, tools=None)
+        return final_response.choices[0].message.content
+
+    def _execute_tools_round(self, response, tool_manager) -> Tuple[Dict, List[Dict]]:
+        """
+        Execute all tool calls in a single round.
+
+        Args:
+            response: API response containing tool calls
+            tool_manager: Manager to execute tools
+
+        Returns:
+            Tuple of (assistant_message, tool_results_messages)
+        """
+        # Build assistant message with tool_calls
         assistant_message = {
             "role": "assistant",
-            "content": initial_response.choices[0].message.content or "",
+            "content": response.choices[0].message.content or "",
             "tool_calls": []
         }
 
-        # Execute all tool calls and collect results
         tool_results = []
-        for tool_call in initial_response.choices[0].message.tool_calls:
-            # Execute the tool
+
+        for tool_call in response.choices[0].message.tool_calls:
+            # Parse arguments
+            import json
+            try:
+                arguments = json.loads(tool_call.function.arguments)
+            except:
+                arguments = {}
+
+            # Execute tool
             tool_result = tool_manager.execute_tool(
                 tool_call.function.name,
-                **eval(tool_call.function.arguments)
+                **arguments
             )
 
-            # Add to assistant message
+            # Build tool_call entry
             assistant_message["tool_calls"].append({
                 "id": tool_call.id,
                 "type": tool_call.type,
@@ -123,26 +220,52 @@ Provide only the direct answer to what was asked.
                 }
             })
 
-            # Add tool result message
+            # Build tool result message
             tool_results.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "content": tool_result
             })
 
-        # Build messages for final call
-        final_messages = messages.copy()
-        final_messages.append(assistant_message)
-        final_messages.extend(tool_results)
+        return assistant_message, tool_results
 
-        # Prepare final API call without tools
-        final_params = {
+    def _make_api_call(self, messages: List[Dict], tools: Optional[List] = None) -> Dict:
+        """
+        Make API call with optional tools parameter.
+
+        Args:
+            messages: Complete message history
+            tools: Tool definitions (include for intermediate rounds, exclude for final)
+
+        Returns:
+            API response object
+        """
+        api_params = {
             "model": self.model,
-            "messages": final_messages,
+            "messages": messages,
             "temperature": 0,
             "max_tokens": 800,
         }
 
-        # Get final response
-        final_response = self.client.chat.completions.create(**final_params)
-        return final_response.choices[0].message.content
+        if tools:
+            api_params["tools"] = tools
+
+        return self.client.chat.completions.create(**api_params)
+
+    def _has_execution_errors(self, tool_results: List[Dict]) -> bool:
+        """
+        Check if any tool executions failed.
+
+        Args:
+            tool_results: List of tool result messages
+
+        Returns:
+            True if any tool execution contained errors
+        """
+        for result in tool_results:
+            content = result.get("content", "")
+            # Check for common error indicators
+            error_indicators = ["error", "failed", "not found", "exception"]
+            if any(indicator in content.lower() for indicator in error_indicators):
+                return True
+        return False

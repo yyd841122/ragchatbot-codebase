@@ -21,8 +21,14 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCourseStats();
 });
 
-// Event Listeners
+    // Event Listeners
 function setupEventListeners() {
+    // New chat button
+    const newChatButton = document.getElementById('newChatButton');
+    if (newChatButton) {
+        newChatButton.addEventListener('click', createNewSession);
+    }
+
     // Chat functionality
     sendButton.addEventListener('click', sendMessage);
     chatInput.addEventListener('keypress', (e) => {
@@ -122,10 +128,46 @@ function addMessage(content, type, sources = null, isWelcome = false) {
     let html = `<div class="message-content">${displayContent}</div>`;
     
     if (sources && sources.length > 0) {
+        // Deduplicate sources based on course_title and lesson_number
+        const uniqueSources = [];
+        const seen = new Set();
+
+        for (const source of sources) {
+            const key = `${source.course_title}-${source.lesson_number}`;
+            if (!seen.has(key)) {
+                seen.add(key);
+                uniqueSources.push(source);
+            }
+        }
+
+        // Generate HTML for sources as clickable links with numbering
+        const sourcesHtml = uniqueSources.map((source, index) => {
+            const link = source.lesson_link || source.course_link;
+            const displayText = source.lesson_number !== null
+                ? `${source.course_title} - Lesson ${source.lesson_number}`
+                : source.course_title;
+
+            // Create clickable link if URL exists, otherwise display plain text
+            if (link) {
+                return `<div class="source-item">
+                    <span class="source-number">${index + 1}.</span>
+                    <a href="${link}" target="_blank" rel="noopener noreferrer" class="source-link">
+                        <span class="link-icon">📗</span>
+                        <span class="link-text">${displayText}</span>
+                    </a>
+                </div>`;
+            } else {
+                return `<div class="source-item">
+                    <span class="source-number">${index + 1}.</span>
+                    <span class="source-text">${displayText}</span>
+                </div>`;
+            }
+        }).join('');
+
         html += `
-            <details class="sources-collapsible">
-                <summary class="sources-header">Sources</summary>
-                <div class="sources-content">${sources.join(', ')}</div>
+            <details class="sources-collapsible" open>
+                <summary class="sources-header">📚 Sources (${uniqueSources.length})</summary>
+                <div class="sources-content">${sourcesHtml}</div>
             </details>
         `;
     }

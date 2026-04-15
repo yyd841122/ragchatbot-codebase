@@ -5,30 +5,31 @@ This module provides common fixtures used across all test files to ensure
 consistent mocking and test data setup.
 """
 
-import sys
 import os
+import sys
+from typing import Any, Dict, List
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from typing import Dict, List, Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from config import config
-from rag_system import RAGSystem
 from ai_generator import AIGenerator
-from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
-from vector_store import VectorStore
+from config import config
+from models import Course, CourseChunk, Lesson
+from rag_system import RAGSystem
+from search_tools import CourseOutlineTool, CourseSearchTool, ToolManager
 from session_manager import SessionManager
-from models import Course, Lesson, CourseChunk
-
+from vector_store import VectorStore
 
 # ==================== Mock Fixtures ====================
+
 
 @pytest.fixture
 def mock_zhipu_client():
     """Create a mock Zhipu AI client that can be configured for different test scenarios."""
-    with patch('zhipuai.ZhipuAI') as mock:
+    with patch("zhipuai.ZhipuAI") as mock:
         yield mock
 
 
@@ -42,11 +43,7 @@ def mock_vector_store():
         error=None,
         is_empty=lambda: False,
         documents=["Test course content"],
-        metadata=[{
-            "course_title": "Test Course",
-            "lesson_number": 1,
-            "chunk_index": 0
-        }]
+        metadata=[{"course_title": "Test Course", "lesson_number": 1, "chunk_index": 0}],
     )
 
     store.get_course_link.return_value = "https://example.com/course"
@@ -55,7 +52,7 @@ def mock_vector_store():
         title="Test Course",
         course_link="https://example.com/course",
         instructor="Test Instructor",
-        lessons=[]
+        lessons=[],
     )
 
     return store
@@ -73,12 +70,13 @@ def mock_session_manager():
 
 # ==================== Real Component Fixtures ====================
 
+
 @pytest.fixture
 def ai_generator():
     """Create a real AIGenerator instance with test configuration."""
     return AIGenerator(
         api_key="test_api_key",  # Use test key, doesn't need to be valid for mocked tests
-        model=config.ZHIPU_MODEL
+        model=config.ZHIPU_MODEL,
     )
 
 
@@ -98,8 +96,10 @@ def tool_manager(mock_vector_store):
 @pytest.fixture
 def rag_system(mock_vector_store, mock_session_manager):
     """Create a RAGSystem instance with mocked dependencies."""
-    with patch('rag_system.VectorStore', return_value=mock_vector_store), \
-         patch('rag_session_manager.SessionManager', return_value=mock_session_manager):
+    with (
+        patch("rag_system.VectorStore", return_value=mock_vector_store),
+        patch("rag_session_manager.SessionManager", return_value=mock_session_manager),
+    ):
 
         system = RAGSystem(config)
         system.vector_store = mock_vector_store
@@ -113,6 +113,7 @@ def rag_system(mock_vector_store, mock_session_manager):
 
 # ==================== Test Data Fixtures ====================
 
+
 @pytest.fixture
 def sample_courses() -> List[Course]:
     """Sample course data for testing."""
@@ -125,7 +126,7 @@ def sample_courses() -> List[Course]:
                 Lesson(number=0, title="Overview", link=None),
                 Lesson(number=1, title="Vector Databases", link="https://example.com/rag/lesson1"),
                 Lesson(number=2, title="Embeddings", link="https://example.com/rag/lesson2"),
-            ]
+            ],
         ),
         Course(
             title="FastAPI Basics",
@@ -134,8 +135,8 @@ def sample_courses() -> List[Course]:
             lessons=[
                 Lesson(number=0, title="Getting Started", link=None),
                 Lesson(number=1, title="Routing", link="https://example.com/fastapi/routing"),
-            ]
-        )
+            ],
+        ),
     ]
 
 
@@ -147,20 +148,20 @@ def sample_chunks() -> List[CourseChunk]:
             course_title="Introduction to RAG",
             lesson_number=1,
             chunk_index=0,
-            text="RAG stands for Retrieval-Augmented Generation. It combines..."
+            text="RAG stands for Retrieval-Augmented Generation. It combines...",
         ),
         CourseChunk(
             course_title="Introduction to RAG",
             lesson_number=1,
             chunk_index=1,
-            text="Vector databases are essential for RAG systems. They store..."
+            text="Vector databases are essential for RAG systems. They store...",
         ),
         CourseChunk(
             course_title="FastAPI Basics",
             lesson_number=0,
             chunk_index=0,
-            text="FastAPI is a modern, fast web framework for building APIs..."
-        )
+            text="FastAPI is a modern, fast web framework for building APIs...",
+        ),
     ]
 
 
@@ -168,22 +169,16 @@ def sample_chunks() -> List[CourseChunk]:
 def sample_query_requests() -> Dict[str, Dict[str, Any]]:
     """Sample query request data for API testing."""
     return {
-        "basic_query": {
-            "query": "What is RAG?",
-            "session_id": None
-        },
+        "basic_query": {"query": "What is RAG?", "session_id": None},
         "course_specific_query": {
             "query": "Tell me about vector databases in the RAG course",
-            "session_id": "session_123"
+            "session_id": "session_123",
         },
         "followup_query": {
             "query": "Can you explain more about embeddings?",
-            "session_id": "session_123"
+            "session_id": "session_123",
         },
-        "general_query": {
-            "query": "What courses are available?",
-            "session_id": None
-        }
+        "general_query": {"query": "What courses are available?", "session_id": None},
     }
 
 
@@ -193,33 +188,31 @@ def sample_ai_responses():
     return {
         "direct_answer": {
             "message": Mock(
-                content="I can help you with questions about course materials.",
-                tool_calls=None
+                content="I can help you with questions about course materials.", tool_calls=None
             )
         },
         "tool_call_search": {
             "message": Mock(
                 content=None,
-                tool_calls=[Mock(
-                    id="call_123",
-                    type="function",
-                    function=Mock(
-                        name="search_course_content",
-                        arguments='{"query": "What is RAG?"}'
+                tool_calls=[
+                    Mock(
+                        id="call_123",
+                        type="function",
+                        function=Mock(
+                            name="search_course_content", arguments='{"query": "What is RAG?"}'
+                        ),
                     )
-                )]
+                ],
             )
         },
         "final_response": {
-            "message": Mock(
-                content="Based on the course materials, RAG is...",
-                tool_calls=None
-            )
-        }
+            "message": Mock(content="Based on the course materials, RAG is...", tool_calls=None)
+        },
     }
 
 
 # ==================== API Test Fixtures ====================
+
 
 @pytest.fixture
 def test_app_data():
@@ -227,7 +220,7 @@ def test_app_data():
     return {
         "course_stats": {
             "total_courses": 2,
-            "course_titles": ["Introduction to RAG", "FastAPI Basics"]
+            "course_titles": ["Introduction to RAG", "FastAPI Basics"],
         },
         "query_result": {
             "answer": "RAG stands for Retrieval-Augmented Generation...",
@@ -236,10 +229,10 @@ def test_app_data():
                     "course_title": "Introduction to RAG",
                     "lesson_number": 1,
                     "course_link": "https://example.com/rag",
-                    "lesson_link": "https://example.com/rag/lesson1"
+                    "lesson_link": "https://example.com/rag/lesson1",
                 }
-            ]
-        }
+            ],
+        },
     }
 
 
@@ -272,6 +265,7 @@ def mock_ai_response_with_tool():
 
 # ==================== Test Helper Functions ====================
 
+
 def create_mock_search_result(documents: List[str], metadata: List[Dict]) -> Mock:
     """Helper to create mock search results."""
     result = Mock()
@@ -300,10 +294,12 @@ def setup_mock_client_with_responses(responses: List[Mock]) -> Mock:
 
 # ==================== Environment Setup ====================
 
+
 @pytest.fixture(autouse=True)
 def suppress_warnings():
     """Suppress resource tracking warnings during tests."""
     import warnings
+
     warnings.filterwarnings("ignore", message="resource_tracker: There appear to be.*")
 
 
@@ -314,5 +310,5 @@ def test_config():
         "test_api_key": "test_key_for_testing",
         "test_model": "glm-4-flash",
         "test_session_id": "test_session_456",
-        "max_test_results": 5
+        "max_test_results": 5,
     }

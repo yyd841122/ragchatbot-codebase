@@ -9,13 +9,14 @@ This module tests all FastAPI endpoints including:
 - Session management
 """
 
-import pytest
-import sys
 import os
-from unittest.mock import Mock, patch, AsyncMock
+import sys
+from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from typing import Dict, Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,8 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import config
 from models import Course, Lesson
 
-
 # ==================== Test Application Setup ====================
+
 
 def create_test_app() -> FastAPI:
     """
@@ -33,11 +34,12 @@ def create_test_app() -> FastAPI:
     This avoids the issue of missing static files in test environment.
     Only API endpoints are included.
     """
+    from typing import List, Optional
+
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.middleware.trustedhost import TrustedHostMiddleware
     from pydantic import BaseModel
-    from typing import List, Optional
 
     # Create test app
     app = FastAPI(title="RAG System Test API")
@@ -94,17 +96,14 @@ def create_test_app() -> FastAPI:
                     course_title="Test Course",
                     lesson_number=1,
                     course_link="https://example.com/course",
-                    lesson_link="https://example.com/lesson1"
+                    lesson_link="https://example.com/lesson1",
                 )
             ]
             return answer, sources
 
         def get_course_analytics(self):
             """Mock analytics method"""
-            return {
-                "total_courses": 2,
-                "course_titles": ["Test Course 1", "Test Course 2"]
-            }
+            return {"total_courses": 2, "course_titles": ["Test Course 1", "Test Course 2"]}
 
     # Initialize mock RAG system
     rag_system = MockRAGSystem()
@@ -122,13 +121,10 @@ def create_test_app() -> FastAPI:
             # Process query using RAG system
             answer, sources = rag_system.query(request.query, session_id)
 
-            return QueryResponse(
-                answer=answer,
-                sources=sources,
-                session_id=session_id
-            )
+            return QueryResponse(answer=answer, sources=sources, session_id=session_id)
         except Exception as e:
             import traceback
+
             error_details = traceback.format_exc()
             print(f"ERROR in /api/query: {error_details}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -139,8 +135,7 @@ def create_test_app() -> FastAPI:
         try:
             analytics = rag_system.get_course_analytics()
             return CourseStats(
-                total_courses=analytics["total_courses"],
-                course_titles=analytics["course_titles"]
+                total_courses=analytics["total_courses"], course_titles=analytics["course_titles"]
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -157,15 +152,13 @@ def test_client():
 
 # ==================== Query Endpoint Tests ====================
 
+
 class TestQueryEndpoint:
     """Test suite for POST /api/query endpoint"""
 
     def test_query_endpoint_basic_request(self, test_client):
         """Test basic query request without session"""
-        response = test_client.post(
-            "/api/query",
-            json={"query": "What is RAG?"}
-        )
+        response = test_client.post("/api/query", json={"query": "What is RAG?"})
 
         assert response.status_code == 200
         data = response.json()
@@ -191,11 +184,7 @@ class TestQueryEndpoint:
         existing_session = "existing_session_456"
 
         response = test_client.post(
-            "/api/query",
-            json={
-                "query": "Tell me more about RAG",
-                "session_id": existing_session
-            }
+            "/api/query", json={"query": "Tell me more about RAG", "session_id": existing_session}
         )
 
         assert response.status_code == 200
@@ -209,10 +198,7 @@ class TestQueryEndpoint:
     def test_query_endpoint_request_validation(self, test_client):
         """Test request validation for malformed requests"""
         # Missing query field
-        response = test_client.post(
-            "/api/query",
-            json={"session_id": "test"}
-        )
+        response = test_client.post("/api/query", json={"session_id": "test"})
 
         assert response.status_code == 422  # Validation error
 
@@ -225,10 +211,7 @@ class TestQueryEndpoint:
 
     def test_query_endpoint_response_structure(self, test_client):
         """Test complete response structure with sources"""
-        response = test_client.post(
-            "/api/query",
-            json={"query": "What courses do you have?"}
-        )
+        response = test_client.post("/api/query", json={"query": "What courses do you have?"})
 
         assert response.status_code == 200
         data = response.json()
@@ -254,14 +237,11 @@ class TestQueryEndpoint:
             "Test with quotes: 'single' and \"double\"",
             "Test with emoji 🚀",
             "Test\nwith\nnewlines",
-            "Test\twith\ttabs"
+            "Test\twith\ttabs",
         ]
 
         for query in special_queries:
-            response = test_client.post(
-                "/api/query",
-                json={"query": query}
-            )
+            response = test_client.post("/api/query", json={"query": query})
 
             assert response.status_code == 200
             data = response.json()
@@ -273,10 +253,7 @@ class TestQueryEndpoint:
         """Test query with very long text"""
         long_query = "Explain RAG " * 100  # 1300 characters
 
-        response = test_client.post(
-            "/api/query",
-            json={"query": long_query}
-        )
+        response = test_client.post("/api/query", json={"query": long_query})
 
         assert response.status_code == 200
         data = response.json()
@@ -302,6 +279,7 @@ class TestQueryEndpoint:
 
 
 # ==================== Courses Endpoint Tests ====================
+
 
 class TestCoursesEndpoint:
     """Test suite for GET /api/courses endpoint"""
@@ -375,16 +353,14 @@ class TestCoursesEndpoint:
 
 # ==================== Integration Tests ====================
 
+
 class TestAPIIntegration:
     """Integration tests for API workflows"""
 
     def test_conversation_flow(self, test_client):
         """Test a multi-turn conversation"""
         # First query - creates session
-        response1 = test_client.post(
-            "/api/query",
-            json={"query": "What is RAG?"}
-        )
+        response1 = test_client.post("/api/query", json={"query": "What is RAG?"})
 
         assert response1.status_code == 200
         data1 = response1.json()
@@ -392,11 +368,7 @@ class TestAPIIntegration:
 
         # Follow-up query - uses existing session
         response2 = test_client.post(
-            "/api/query",
-            json={
-                "query": "Tell me more about it",
-                "session_id": session_id
-            }
+            "/api/query", json={"query": "Tell me more about it", "session_id": session_id}
         )
 
         assert response2.status_code == 200
@@ -416,8 +388,7 @@ class TestAPIIntegration:
 
         # Make a query about courses
         query_response = test_client.post(
-            "/api/query",
-            json={"query": "What courses are available?"}
+            "/api/query", json={"query": "What courses are available?"}
         )
 
         assert query_response.status_code == 200
@@ -435,10 +406,7 @@ class TestAPIIntegration:
 
         # Create 3 separate sessions
         for i in range(3):
-            response = test_client.post(
-                "/api/query",
-                json={"query": f"Question {i+1}"}
-            )
+            response = test_client.post("/api/query", json={"query": f"Question {i+1}"})
 
             assert response.status_code == 200
             data = response.json()
@@ -452,15 +420,14 @@ class TestAPIIntegration:
 
 # ==================== Error Handling Tests ====================
 
+
 class TestErrorHandling:
     """Test suite for error handling"""
 
     def test_invalid_json_input(self, test_client):
         """Test handling of invalid JSON"""
         response = test_client.post(
-            "/api/query",
-            data="invalid json",
-            headers={"Content-Type": "application/json"}
+            "/api/query", data="invalid json", headers={"Content-Type": "application/json"}
         )
 
         # Should return validation error
@@ -470,10 +437,7 @@ class TestErrorHandling:
 
     def test_missing_content_type(self, test_client):
         """Test handling of missing content-type header"""
-        response = test_client.post(
-            "/api/query",
-            data='{"query": "test"}'
-        )
+        response = test_client.post("/api/query", data='{"query": "test"}')
 
         # Should still work with form data or handle appropriately
         assert response.status_code in [200, 415, 422]
@@ -482,10 +446,7 @@ class TestErrorHandling:
 
     def test_empty_query_string(self, test_client):
         """Test handling of empty query"""
-        response = test_client.post(
-            "/api/query",
-            json={"query": ""}
-        )
+        response = test_client.post("/api/query", json={"query": ""})
 
         # Should either process or return validation error
         assert response.status_code in [200, 422]
@@ -503,6 +464,7 @@ class TestErrorHandling:
 
 # ==================== Performance Tests ====================
 
+
 class TestPerformance:
     """Basic performance tests for API endpoints"""
 
@@ -511,10 +473,7 @@ class TestPerformance:
         import time
 
         start_time = time.time()
-        response = test_client.post(
-            "/api/query",
-            json={"query": "What is RAG?"}
-        )
+        response = test_client.post("/api/query", json={"query": "What is RAG?"})
         end_time = time.time()
 
         response_time = end_time - start_time
@@ -535,8 +494,7 @@ class TestPerformance:
         def make_request(index):
             try:
                 response = test_client.post(
-                    "/api/query",
-                    json={"query": f"Concurrent query {index}"}
+                    "/api/query", json={"query": f"Concurrent query {index}"}
                 )
                 results.append(response.status_code)
             except Exception as e:

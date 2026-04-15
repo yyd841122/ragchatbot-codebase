@@ -40,6 +40,12 @@ class VectorStore:
 
     def __init__(self, chroma_path: str, embedding_model: str, max_results: int = 5):
         self.max_results = max_results
+        # Similarity threshold for considering a match valid
+        # Lower distance = higher similarity. Threshold of 0.6 requires reasonably good match
+        self.course_name_similarity_threshold = 0.6
+        # Similarity threshold for content search results
+        # Threshold of 0.85 allows shorter query terms to match while still filtering irrelevant content
+        self.content_similarity_threshold = 0.85
         # Initialize ChromaDB client
         self.client = chromadb.PersistentClient(
             path=chroma_path, settings=Settings(anonymized_telemetry=False)
@@ -99,7 +105,29 @@ class VectorStore:
             results = self.course_content.query(
                 query_texts=[query], n_results=search_limit, where=filter_dict
             )
-            return SearchResults.from_chroma(results)
+            search_results = SearchResults.from_chroma(results)
+
+            # Filter out results with low similarity (high distance)
+            # This ensures irrelevant queries don't return unrelated content
+            if search_results.distances:
+                filtered_docs = []
+                filtered_metadata = []
+                filtered_distances = []
+
+                for doc, meta, dist in zip(
+                    search_results.documents, search_results.metadata, search_results.distances
+                ):
+                    if dist <= self.content_similarity_threshold:
+                        filtered_docs.append(doc)
+                        filtered_metadata.append(meta)
+                        filtered_distances.append(dist)
+
+                # Update search results with filtered content
+                search_results.documents = filtered_docs
+                search_results.metadata = filtered_metadata
+                search_results.distances = filtered_distances
+
+            return search_results
         except Exception as e:
             return SearchResults.empty(f"Search error: {str(e)}")
 
@@ -109,8 +137,15 @@ class VectorStore:
             results = self.course_catalog.query(query_texts=[course_name], n_results=1)
 
             if results["documents"][0] and results["metadatas"][0]:
-                # Return the title (which is now the ID)
-                return results["metadatas"][0][0]["title"]
+                # Check if similarity is high enough (distance is low enough)
+                # Distance below threshold means good enough match
+                distances = results.get("distances", [[]])
+                if distances and distances[0]:
+                    distance = distances[0][0]
+                    if distance <= self.course_name_similarity_threshold:
+                        # Good match - return the title
+                        return results["metadatas"][0][0]["title"]
+                # If no distance info or distance too high, not a good match
         except Exception as e:
             print(f"Error resolving course name: {e}")
 

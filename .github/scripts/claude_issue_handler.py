@@ -210,88 +210,89 @@ def main():
         print("🤖 Zhipu AI Issue Handler Started")
         print("=" * 60)
 
-        # Validate environment variables first
-        print("🔍 Validating environment variables...")
+        # Debug: Print all environment variables
+        print("🔍 Environment Variables Check:")
+        for key, value in os.environ.items():
+            if 'TOKEN' in key or 'KEY' in key or 'SECRET' in key:
+                print(f"  {key}: {'*' * 8}...{value[-4:] if value else 'None'}")
+            elif key.startswith('GITHUB_') or key in ['REPO_NAME', 'ISSUE_NUMBER']:
+                print(f"  {key}: {value}")
 
-        required_vars = ['GITHUB_TOKEN', 'REPO_NAME', 'ISSUE_NUMBER', 'ZHIPU_API_KEY']
-        missing_vars = []
+        # Validate critical environment variables
+        print("\n🔍 Validating environment variables...")
 
-        for var in required_vars:
-            value = os.environ.get(var)
-            if not value:
-                missing_vars.append(var)
-            else:
-                # Hide sensitive values in logs
-                if 'KEY' in var or 'TOKEN' in var:
-                    print(f"  ✅ {var}: {'*' * 10}...{value[-4:]}")
-                else:
-                    print(f"  ✅ {var}: {value}")
+        github_token = os.environ.get('GITHUB_TOKEN')
+        if not github_token:
+            raise ValueError("GITHUB_TOKEN not found in environment")
 
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+        repo_name = os.environ.get('REPO_NAME')
+        if not repo_name:
+            raise ValueError("REPO_NAME not found in environment")
+
+        issue_number_str = os.environ.get('ISSUE_NUMBER')
+        if not issue_number_str:
+            raise ValueError("ISSUE_NUMBER not found in environment")
+
+        zhipu_key = os.environ.get('ZHIPU_API_KEY')
+        if not zhipu_key:
+            raise ValueError("ZHIPU_API_KEY not found in environment")
 
         print("✅ All environment variables validated")
-
-        # Initialize GitHub client
-        github_token = os.environ.get('GITHUB_TOKEN')
-        repo_name = os.environ.get('REPO_NAME')
-        issue_number_str = os.environ.get('ISSUE_NUMBER')
 
         try:
             issue_number = int(issue_number_str)
         except ValueError:
             raise ValueError(f"ISSUE_NUMBER must be a number, got: {issue_number_str}")
 
-        g = Github(github_token)
-        repo = g.get_repo(repo_name)
-
         print(f"📝 Processing issue #{issue_number} in {repo_name}")
         print("-" * 60)
 
+        # Initialize GitHub client
+        print("🔗 Connecting to GitHub...")
+        g = Github(github_token)
+        repo = g.get_repo(repo_name)
+        print(f"✅ Connected to repository: {repo.full_name}")
+
         # Get issue context
+        print(f"📥 Fetching issue #{issue_number}...")
         context = get_issue_context(repo, issue_number)
         if not context:
             raise ValueError("Failed to get issue context")
 
+        print(f"✅ Issue fetched: {context['title']}")
+        print(f"   Author: {context['author']}")
+        print(f"   Labels: {', '.join(context['labels'])}")
+
         # Get repository structure
+        print("📁 Analyzing repository structure...")
         repo_structure = get_repository_structure()
+        print(f"✅ Found {len(repo_structure.split(chr(10)))} files")
 
         # Analyze with Zhipu AI
-        print("Analyzing issue with Zhipu AI...")
+        print("🤖 Calling Zhipu AI API...")
         analysis_result = analyze_with_zhipu(context, repo_structure)
 
         if not analysis_result:
             raise ValueError("Failed to analyze issue with Zhipu AI")
 
+        print("✅ AI analysis completed")
+
         # Post initial analysis as comment
+        print("💬 Posting analysis to issue...")
         comment_message = f"""## 🤖 Zhipu AI 分析
 
 {analysis_result}
 
-正在实现修复方案，请稍候...
+---
+*由智谱AI自动生成*
 """
-        add_issue_comment(repo, issue_number, comment_message)
-
-        # Create pull request with the fix
-        issue = repo.get_issue(issue_number)
-        pr_created = create_pull_request(repo, issue, analysis_result)
-
-        if pr_created:
-            success_message = "## ✅ 修复实现已开始
-
-已分析 Issue 并开始实施修复。稍后将创建包含更改的 Pull Request。
-
-请查看上面的分析结果，如有需要请提供反馈。"
-            add_issue_comment(repo, issue_number, success_message)
+        if add_issue_comment(repo, issue_number, comment_message):
+            print("✅ Analysis posted to issue")
         else:
-            error_message = "## ⚠️ 需要人工干预
+            print("⚠️  Failed to post comment, but analysis was completed")
 
-已分析 Issue 并提出了解决方案（见上文），但无法自动实施修复。
-
-请查看分析结果并手动实施建议的更改。"
-            add_issue_comment(repo, issue_number, error_message)
-
-        print("✅ Issue processing completed successfully")
+        print("=" * 60)
+        print("🎉 Issue processing completed successfully!")
         print("=" * 60)
 
     except Exception as e:

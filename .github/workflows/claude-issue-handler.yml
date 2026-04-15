@@ -25,8 +25,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -45,13 +43,21 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          pip install zhipuai==1.0.0 PyGithub>=2.3.0 python-dotenv>=1.0.0
+          pip install zhipuai==1.0.0 PyGithub>=2.3.0
 
       - name: Verify installation
         run: |
           python -c "import zhipuai; print('✅ zhipuai installed')"
           python -c "import github; print('✅ PyGithub installed')"
-          python -c "import dotenv; print('✅ python-dotenv installed')"
+
+      - name: Print environment info
+        run: |
+          echo "🔍 Environment Info:"
+          echo "Python version: $(python --version)"
+          echo "Working directory: $(pwd)"
+          echo "Repository: ${{ github.repository }}"
+          echo "Event name: ${{ github.event_name }}"
+          echo "Issue number: ${{ github.event.issue.number || github.event.inputs.issue_number }}"
 
       - name: Process Issue with Zhipu AI
         env:
@@ -61,4 +67,4 @@ jobs:
           REPO_NAME: ${{ github.repository }}
           PYTHONUNBUFFERED: '1'
         run: |
-          python .github/scripts/claude_issue_handler.py
+          python .github/scripts/claude_issue_handler_simple.py

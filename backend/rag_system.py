@@ -1,91 +1,97 @@
-from typing import List, Tuple, Optional, Dict, Any
 import os
-from document_processor import DocumentProcessor
-from vector_store import VectorStore
+from typing import Any, Dict, List, Optional, Tuple
+
 from ai_generator import AIGenerator
+from document_processor import DocumentProcessor
+from models import Course, CourseChunk, Lesson
+from search_tools import CourseOutlineTool, CourseSearchTool, ToolManager
 from session_manager import SessionManager
-from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
-from models import Course, Lesson, CourseChunk
+from vector_store import VectorStore
+
 
 class RAGSystem:
     """Main orchestrator for the Retrieval-Augmented Generation system"""
-    
+
     def __init__(self, config):
         self.config = config
-        
+
         # Initialize core components
         self.document_processor = DocumentProcessor(config.CHUNK_SIZE, config.CHUNK_OVERLAP)
-        self.vector_store = VectorStore(config.CHROMA_PATH, config.EMBEDDING_MODEL, config.MAX_RESULTS)
+        self.vector_store = VectorStore(
+            config.CHROMA_PATH, config.EMBEDDING_MODEL, config.MAX_RESULTS
+        )
         self.ai_generator = AIGenerator(config.ZHIPU_API_KEY, config.ZHIPU_MODEL)
         self.session_manager = SessionManager(config.MAX_HISTORY)
-        
+
         # Initialize search tools
         self.tool_manager = ToolManager()
         self.search_tool = CourseSearchTool(self.vector_store)
         self.tool_manager.register_tool(self.search_tool)
         self.outline_tool = CourseOutlineTool(self.vector_store)
         self.tool_manager.register_tool(self.outline_tool)
-    
+
     def add_course_document(self, file_path: str) -> Tuple[Course, int]:
         """
         Add a single course document to the knowledge base.
-        
+
         Args:
             file_path: Path to the course document
-            
+
         Returns:
             Tuple of (Course object, number of chunks created)
         """
         try:
             # Process the document
             course, course_chunks = self.document_processor.process_course_document(file_path)
-            
+
             # Add course metadata to vector store for semantic search
             self.vector_store.add_course_metadata(course)
-            
+
             # Add course content chunks to vector store
             self.vector_store.add_course_content(course_chunks)
-            
+
             return course, len(course_chunks)
         except Exception as e:
             print(f"Error processing course document {file_path}: {e}")
             return None, 0
-    
+
     def add_course_folder(self, folder_path: str, clear_existing: bool = False) -> Tuple[int, int]:
         """
         Add all course documents from a folder.
-        
+
         Args:
             folder_path: Path to folder containing course documents
             clear_existing: Whether to clear existing data first
-            
+
         Returns:
             Tuple of (total courses added, total chunks created)
         """
         total_courses = 0
         total_chunks = 0
-        
+
         # Clear existing data if requested
         if clear_existing:
             print("Clearing existing data for fresh rebuild...")
             self.vector_store.clear_all_data()
-        
+
         if not os.path.exists(folder_path):
             print(f"Folder {folder_path} does not exist")
             return 0, 0
-        
+
         # Get existing course titles to avoid re-processing
         existing_course_titles = set(self.vector_store.get_existing_course_titles())
-        
+
         # Process each file in the folder
         for file_name in os.listdir(folder_path):
             file_path = os.path.join(folder_path, file_name)
-            if os.path.isfile(file_path) and file_name.lower().endswith(('.pdf', '.docx', '.txt')):
+            if os.path.isfile(file_path) and file_name.lower().endswith((".pdf", ".docx", ".txt")):
                 try:
                     # Check if this course might already exist
                     # We'll process the document to get the course ID, but only add if new
-                    course, course_chunks = self.document_processor.process_course_document(file_path)
-                    
+                    course, course_chunks = self.document_processor.process_course_document(
+                        file_path
+                    )
+
                     if course and course.title not in existing_course_titles:
                         # This is a new course - add it to the vector store
                         self.vector_store.add_course_metadata(course)
@@ -98,11 +104,12 @@ class RAGSystem:
                         print(f"Course already exists: {course.title} - skipping")
                 except Exception as e:
                     print(f"Error processing {file_name}: {e}")
-        
+
         return total_courses, total_chunks
-    
-    def query(self, query: str, session_id: Optional[str] = None,
-              max_rounds: Optional[int] = None) -> Tuple[str, List[Dict[str, Any]]]:
+
+    def query(
+        self, query: str, session_id: Optional[str] = None, max_rounds: Optional[int] = None
+    ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Process a user query using the RAG system with AI-driven tool selection.
 
@@ -132,7 +139,7 @@ class RAGSystem:
             conversation_history=history,
             tools=tools,
             tool_manager=self.tool_manager,
-            max_rounds=max_rounds
+            max_rounds=max_rounds,
         )
 
         # Get sources from the last tool execution (if any)
@@ -147,10 +154,10 @@ class RAGSystem:
 
         # Return response with sources
         return response, sources
-    
+
     def get_course_analytics(self) -> Dict:
         """Get analytics about the course catalog"""
         return {
             "total_courses": self.vector_store.get_course_count(),
-            "course_titles": self.vector_store.get_existing_course_titles()
+            "course_titles": self.vector_store.get_existing_course_titles(),
         }

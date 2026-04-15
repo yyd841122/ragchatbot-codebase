@@ -54,3 +54,53 @@ The application will be available at:
 - Web Interface: `http://localhost:8000`
 - API Documentation: `http://localhost:8000/docs`
 
+## Development Tools
+
+### Code Quality
+
+This project includes automated code quality tools:
+
+```bash
+# Format code
+python scripts/format.py
+
+# Run quality checks
+python scripts/check_quality.py
+
+# Or use the convenience scripts (Windows)
+scripts\dev.bat format
+scripts\dev.bat check
+
+# Or use the convenience scripts (Linux/Mac)
+bash scripts/dev.sh format
+bash scripts/dev.sh check
+```
+
+**Tools included:**
+- **Black**: Code formatter (line length: 100 chars)
+- **isort**: Import statement organizer
+- **Flake8**: Code style checker
+
+For detailed usage, see [docs/CODE_QUALITY.md](docs/CODE_QUALITY.md).
+
+### Testing
+
+Run the test suite:
+```bash
+cd backend
+uv run pytest -v
+```
+
+### Pre-commit Hooks (Optional)
+
+Install pre-commit hooks for automatic quality checks:
+```bash
+# Install pre-commit framework
+pip install pre-commit
+
+# Install hooks
+pre-commit install
+
+# Now hooks will run automatically on each commit
+```
+

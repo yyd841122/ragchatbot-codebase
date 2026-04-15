@@ -1,32 +1,31 @@
 """Tests for AIGenerator to diagnose tool calling issues"""
-import pytest
-import sys
+
 import os
-from unittest.mock import Mock, MagicMock, patch
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_generator import AIGenerator
-from search_tools import ToolManager, CourseSearchTool
-from vector_store import VectorStore
 from config import config
+from search_tools import CourseSearchTool, ToolManager
+from vector_store import VectorStore
 
 
 @pytest.fixture
 def mock_zhipu_client():
     """Create a mock Zhipu AI client"""
-    with patch('zhipuai.ZhipuAI') as mock:
+    with patch("zhipuai.ZhipuAI") as mock:
         yield mock
 
 
 @pytest.fixture
 def ai_generator():
     """Create an AIGenerator instance"""
-    return AIGenerator(
-        api_key=config.ZHIPU_API_KEY,
-        model=config.ZHIPU_MODEL
-    )
+    return AIGenerator(api_key=config.ZHIPU_API_KEY, model=config.ZHIPU_MODEL)
 
 
 @pytest.fixture
@@ -52,7 +51,7 @@ class TestAIGenerator:
         """Test that AIGenerator initializes correctly"""
         assert ai_generator is not None
         assert ai_generator.model == config.ZHIPU_MODEL
-        assert hasattr(ai_generator, 'client')
+        assert hasattr(ai_generator, "client")
 
         print("[PASS] AIGenerator initializes correctly")
 
@@ -66,7 +65,7 @@ class TestAIGenerator:
         print("[PASS] System prompt is properly defined")
         print(f"  Prompt length: {len(ai_generator.SYSTEM_PROMPT)} characters")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_generate_response_without_tools(self, mock_client_class, ai_generator):
         """Test basic response generation without tools"""
         # Setup mock response
@@ -91,7 +90,7 @@ class TestAIGenerator:
 
         print(f"[PASS] Basic response generation works: {response[:50]}...")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_generate_response_with_tool_call(self, mock_client_class, mock_vector_store):
         """Test response generation with tool calling"""
         # Setup mock vector store response
@@ -99,11 +98,9 @@ class TestAIGenerator:
         mock_search_result.error = None
         mock_search_result.is_empty.return_value = False
         mock_search_result.documents = ["Test content about RAG"]
-        mock_search_result.metadata = [{
-            "course_title": "Test Course",
-            "lesson_number": 1,
-            "chunk_index": 0
-        }]
+        mock_search_result.metadata = [
+            {"course_title": "Test Course", "lesson_number": 1, "chunk_index": 0}
+        ]
 
         mock_vector_store.search.return_value = mock_search_result
         mock_vector_store.get_course_link.return_value = "https://example.com/course"
@@ -132,14 +129,16 @@ class TestAIGenerator:
         # Setup third API call (final response)
         mock_third_response = Mock()
         mock_third_response.choices = [Mock()]
-        mock_third_response.choices[0].message.content = "RAG stands for Retrieval-Augmented Generation..."
+        mock_third_response.choices[0].message.content = (
+            "RAG stands for Retrieval-Augmented Generation..."
+        )
         mock_third_response.choices[0].message.tool_calls = None
 
         mock_client_instance = Mock()
         mock_client_instance.chat.completions.create.side_effect = [
             mock_first_response,
             mock_second_response,
-            mock_third_response
+            mock_third_response,
         ]
         mock_client_class.return_value = mock_client_instance
 
@@ -151,9 +150,7 @@ class TestAIGenerator:
 
         # Test
         response = generator.generate_response(
-            query="What is RAG?",
-            tools=manager.get_tool_definitions(),
-            tool_manager=manager
+            query="What is RAG?", tools=manager.get_tool_definitions(), tool_manager=manager
         )
 
         assert response is not None
@@ -169,7 +166,7 @@ class TestAIGenerator:
         """Test that conversation history is properly integrated"""
         history = "User: What is RAG?\nAssistant: RAG stands for..."
 
-        with patch('zhipuai.ZhipuAI') as mock_client_class:
+        with patch("zhipuai.ZhipuAI") as mock_client_class:
             # Setup mock response
             mock_response = Mock()
             mock_response.choices = [Mock()]
@@ -184,18 +181,15 @@ class TestAIGenerator:
             generator = AIGenerator("test_key", "glm-4-flash")
 
             # Test
-            response = generator.generate_response(
-                "Tell me more",
-                conversation_history=history
-            )
+            response = generator.generate_response("Tell me more", conversation_history=history)
 
             # Verify that the API was called with history
             call_args = mock_client_instance.chat.completions.create.call_args
-            messages = call_args[1]['messages']
+            messages = call_args[1]["messages"]
 
             # Check that history was included in system message
-            system_msg = [m for m in messages if m['role'] == 'system'][0]
-            assert history in system_msg['content']
+            system_msg = [m for m in messages if m["role"] == "system"][0]
+            assert history in system_msg["content"]
 
             print(f"[PASS] Conversation history integration works")
 
@@ -204,7 +198,7 @@ class TestAIGenerator:
         # Setup vector store to return error
         mock_vector_store.search.side_effect = Exception("Database connection failed")
 
-        with patch('zhipuai.ZhipuAI') as mock_client_class:
+        with patch("zhipuai.ZhipuAI") as mock_client_class:
             # Setup mock response with tool call
             mock_response = Mock()
             mock_response.choices = [Mock()]
@@ -231,9 +225,7 @@ class TestAIGenerator:
             # Test - should handle error gracefully
             try:
                 response = generator.generate_response(
-                    query="test query",
-                    tools=manager.get_tool_definitions(),
-                    tool_manager=manager
+                    query="test query", tools=manager.get_tool_definitions(), tool_manager=manager
                 )
                 print(f"[PASS] Error handling works: {response[:50]}...")
             except Exception as e:

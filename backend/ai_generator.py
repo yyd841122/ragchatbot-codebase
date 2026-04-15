@@ -1,5 +1,7 @@
+from typing import Dict, List, Optional, Tuple
+
 import zhipuai
-from typing import List, Optional, Dict, Tuple
+
 
 class AIGenerator:
     """Handles interactions with Zhipu AI API for generating responses"""
@@ -65,11 +67,14 @@ class AIGenerator:
         self.client = zhipuai.ZhipuAI(api_key=api_key)
         self.model = model
 
-    def generate_response(self, query: str,
-                         conversation_history: Optional[str] = None,
-                         tools: Optional[List] = None,
-                         tool_manager=None,
-                         max_rounds: int = 2) -> str:
+    def generate_response(
+        self,
+        query: str,
+        conversation_history: Optional[str] = None,
+        tools: Optional[List] = None,
+        tool_manager=None,
+        max_rounds: int = 2,
+    ) -> str:
         """
         Generate AI response with optional tool usage and conversation context.
 
@@ -92,8 +97,10 @@ class AIGenerator:
         )
 
         # Prepare messages
-        messages = [{"role": "system", "content": system_content},
-                   {"role": "user", "content": query}]
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": query},
+        ]
 
         # Prepare API call parameters
         api_params = {
@@ -117,8 +124,9 @@ class AIGenerator:
         # Return direct response
         return response.choices[0].message.content
 
-    def _handle_tool_execution(self, initial_response, messages: List[Dict],
-                              tool_manager, max_rounds: int = 2) -> str:
+    def _handle_tool_execution(
+        self, initial_response, messages: List[Dict], tool_manager, max_rounds: int = 2
+    ) -> str:
         """
         Handle sequential tool execution with up to 2 rounds.
 
@@ -191,7 +199,7 @@ class AIGenerator:
         assistant_message = {
             "role": "assistant",
             "content": response.choices[0].message.content or "",
-            "tool_calls": []
+            "tool_calls": [],
         }
 
         tool_results = []
@@ -199,33 +207,31 @@ class AIGenerator:
         for tool_call in response.choices[0].message.tool_calls:
             # Parse arguments
             import json
+
             try:
                 arguments = json.loads(tool_call.function.arguments)
             except:
                 arguments = {}
 
             # Execute tool
-            tool_result = tool_manager.execute_tool(
-                tool_call.function.name,
-                **arguments
-            )
+            tool_result = tool_manager.execute_tool(tool_call.function.name, **arguments)
 
             # Build tool_call entry
-            assistant_message["tool_calls"].append({
-                "id": tool_call.id,
-                "type": tool_call.type,
-                "function": {
-                    "name": tool_call.function.name,
-                    "arguments": tool_call.function.arguments
+            assistant_message["tool_calls"].append(
+                {
+                    "id": tool_call.id,
+                    "type": tool_call.type,
+                    "function": {
+                        "name": tool_call.function.name,
+                        "arguments": tool_call.function.arguments,
+                    },
                 }
-            })
+            )
 
             # Build tool result message
-            tool_results.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result
-            })
+            tool_results.append(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": tool_result}
+            )
 
         return assistant_message, tool_results
 

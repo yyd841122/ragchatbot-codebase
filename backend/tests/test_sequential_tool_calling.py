@@ -1,32 +1,31 @@
 """Tests for sequential tool calling functionality"""
-import pytest
-import sys
+
 import os
-from unittest.mock import Mock, MagicMock, patch
+import sys
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ai_generator import AIGenerator
-from search_tools import ToolManager, CourseSearchTool, CourseOutlineTool
-from vector_store import VectorStore
 from config import config
+from search_tools import CourseOutlineTool, CourseSearchTool, ToolManager
+from vector_store import VectorStore
 
 
 @pytest.fixture
 def mock_zhipu_client():
     """Create a mock Zhipu AI client"""
-    with patch('zhipuai.ZhipuAI') as mock:
+    with patch("zhipuai.ZhipuAI") as mock:
         yield mock
 
 
 @pytest.fixture
 def ai_generator():
     """Create an AIGenerator instance"""
-    return AIGenerator(
-        api_key=config.ZHIPU_API_KEY,
-        model=config.ZHIPU_MODEL
-    )
+    return AIGenerator(api_key=config.ZHIPU_API_KEY, model=config.ZHIPU_MODEL)
 
 
 @pytest.fixture
@@ -50,7 +49,7 @@ def tool_manager(mock_vector_store):
 class TestSequentialToolCalling:
     """Test suite for sequential tool calling functionality"""
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_sequential_tool_calling_two_rounds(self, mock_client_class, mock_vector_store):
         """Test that two consecutive tool calls work correctly"""
         # Setup mock vector store responses
@@ -58,11 +57,9 @@ class TestSequentialToolCalling:
         mock_search_result.error = None
         mock_search_result.is_empty.return_value = False
         mock_search_result.documents = ["Test content about RAG"]
-        mock_search_result.metadata = [{
-            "course_title": "Test Course",
-            "lesson_number": 1,
-            "chunk_index": 0
-        }]
+        mock_search_result.metadata = [
+            {"course_title": "Test Course", "lesson_number": 1, "chunk_index": 0}
+        ]
 
         mock_outline_result = Mock()
         mock_outline_result.title = "Introduction to RAG"
@@ -101,14 +98,16 @@ class TestSequentialToolCalling:
         # 3rd: Second tool result → final response
         mock_third_response = Mock()
         mock_third_response.choices = [Mock()]
-        mock_third_response.choices[0].message.content = "Based on the search and course outline, RAG is..."
+        mock_third_response.choices[0].message.content = (
+            "Based on the search and course outline, RAG is..."
+        )
         mock_third_response.choices[0].message.tool_calls = None
 
         mock_client_instance = Mock()
         mock_client_instance.chat.completions.create.side_effect = [
             mock_first_response,
             mock_second_response,
-            mock_third_response
+            mock_third_response,
         ]
         mock_client_class.return_value = mock_client_instance
 
@@ -125,7 +124,7 @@ class TestSequentialToolCalling:
             query="What is RAG and show me the course outline",
             tools=manager.get_tool_definitions(),
             tool_manager=manager,
-            max_rounds=2
+            max_rounds=2,
         )
 
         # Verify results
@@ -142,7 +141,7 @@ class TestSequentialToolCalling:
 
         print("[PASS] Sequential tool calling with two rounds works correctly")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_early_termination_no_tool_calls(self, mock_client_class, mock_vector_store):
         """Test that loop terminates when AI decides not to use tools"""
         # Setup three API calls:
@@ -174,7 +173,7 @@ class TestSequentialToolCalling:
         mock_client_instance.chat.completions.create.side_effect = [
             mock_first_response,
             mock_second_response,
-            mock_third_response
+            mock_third_response,
         ]
         mock_client_class.return_value = mock_client_instance
 
@@ -197,7 +196,7 @@ class TestSequentialToolCalling:
             query="Tell me about test topic",
             tools=manager.get_tool_definitions(),
             tool_manager=manager,
-            max_rounds=2
+            max_rounds=2,
         )
 
         # Verify results
@@ -212,7 +211,7 @@ class TestSequentialToolCalling:
 
         print("[PASS] Early termination when no tool calls works correctly")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_early_termination_on_error(self, mock_client_class, mock_vector_store):
         """Test that loop terminates when tool execution fails"""
         # Setup two API calls:
@@ -231,20 +230,21 @@ class TestSequentialToolCalling:
         # 2nd: Tool error → final response
         mock_second_response = Mock()
         mock_second_response.choices = [Mock()]
-        mock_second_response.choices[0].message.content = "I encountered an error searching for information"
+        mock_second_response.choices[0].message.content = (
+            "I encountered an error searching for information"
+        )
         mock_second_response.choices[0].message.tool_calls = None
 
         mock_client_instance = Mock()
         mock_client_instance.chat.completions.create.side_effect = [
             mock_first_response,
-            mock_second_response
+            mock_second_response,
         ]
         mock_client_class.return_value = mock_client_instance
 
         # Setup mock vector store to return error
         mock_vector_store.search.return_value = Mock(
-            error="Database connection failed",
-            is_empty=lambda: True
+            error="Database connection failed", is_empty=lambda: True
         )
 
         # Create generator and tool manager
@@ -258,7 +258,7 @@ class TestSequentialToolCalling:
             query="Tell me about test topic",
             tools=manager.get_tool_definitions(),
             tool_manager=manager,
-            max_rounds=2
+            max_rounds=2,
         )
 
         # Verify results
@@ -270,7 +270,7 @@ class TestSequentialToolCalling:
 
         print("[PASS] Early termination on error works correctly")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_source_accumulation_across_rounds(self, mock_client_class, mock_vector_store):
         """Test that sources are accumulated from multiple tool executions"""
         # Setup mock vector store responses
@@ -278,11 +278,9 @@ class TestSequentialToolCalling:
         mock_search_result.error = None
         mock_search_result.is_empty.return_value = False
         mock_search_result.documents = ["RAG content"]
-        mock_search_result.metadata = [{
-            "course_title": "RAG Course",
-            "lesson_number": 1,
-            "chunk_index": 0
-        }]
+        mock_search_result.metadata = [
+            {"course_title": "RAG Course", "lesson_number": 1, "chunk_index": 0}
+        ]
 
         mock_outline_result = Mock()
         mock_outline_result.title = "RAG Course"
@@ -325,7 +323,7 @@ class TestSequentialToolCalling:
         mock_client_instance.chat.completions.create.side_effect = [
             mock_first_response,
             mock_second_response,
-            mock_third_response
+            mock_third_response,
         ]
         mock_client_class.return_value = mock_client_instance
 
@@ -342,7 +340,7 @@ class TestSequentialToolCalling:
             query="What is RAG and show me the outline",
             tools=manager.get_tool_definitions(),
             tool_manager=manager,
-            max_rounds=2
+            max_rounds=2,
         )
 
         # Verify sources were accumulated
@@ -350,9 +348,10 @@ class TestSequentialToolCalling:
         assert len(sources) > 0
         print(f"[PASS] Source accumulation works: {len(sources)} sources collected")
 
-    @patch('zhipuai.ZhipuAI')
+    @patch("zhipuai.ZhipuAI")
     def test_max_rounds_enforcement(self, mock_client_class, mock_vector_store):
         """Test that MAX_ROUNDS limit is enforced"""
+
         # Setup mock to always return tool calls (trying to exceed limit)
         def create_response_with_tool(call_id, tool_name):
             response = Mock()
@@ -370,7 +369,7 @@ class TestSequentialToolCalling:
         responses = [
             create_response_with_tool("call_1", "search_course_content"),
             create_response_with_tool("call_2", "search_course_content"),
-            Mock(choices=[Mock(content="Final response", tool_calls=None)])
+            Mock(choices=[Mock(content="Final response", tool_calls=None)]),
         ]
 
         mock_client_instance = Mock()
@@ -396,7 +395,7 @@ class TestSequentialToolCalling:
             query="Test query",
             tools=manager.get_tool_definitions(),
             tool_manager=manager,
-            max_rounds=2
+            max_rounds=2,
         )
 
         # Verify API was called 3 times max (initial + 2 rounds + final)

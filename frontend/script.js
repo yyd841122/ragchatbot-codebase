@@ -7,6 +7,41 @@ let currentSessionId = null;
 // DOM elements
 let chatMessages, chatInput, sendButton, totalCourses, courseTitles;
 
+// Theme Management
+function setupThemeToggle() {
+    const themeToggle = document.getElementById('themeToggle');
+
+    // Check for saved theme preference or default to 'dark'
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+
+    // Toggle theme on button click
+    themeToggle.addEventListener('click', () => {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        // Apply new theme
+        document.documentElement.setAttribute('data-theme', newTheme);
+
+        // Save preference
+        localStorage.setItem('theme', newTheme);
+
+        // Add button animation
+        themeToggle.style.transform = 'scale(0.9) rotate(180deg)';
+        setTimeout(() => {
+            themeToggle.style.transform = '';
+        }, 300);
+    });
+
+    // Keyboard navigation: Enter or Space to toggle
+    themeToggle.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            themeToggle.click();
+        }
+    });
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     // Get DOM elements after page loads
@@ -15,8 +50,9 @@ document.addEventListener('DOMContentLoaded', () => {
     sendButton = document.getElementById('sendButton');
     totalCourses = document.getElementById('totalCourses');
     courseTitles = document.getElementById('courseTitles');
-    
+
     setupEventListeners();
+    setupThemeToggle();
     createNewSession();
     loadCourseStats();
 });

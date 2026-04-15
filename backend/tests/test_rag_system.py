@@ -97,8 +97,9 @@ class TestRAGSystem:
 
         print(f"[PASS] Vector store contains data: {course_count} courses")
 
+    @pytest.mark.integration
     def test_query_without_session(self, populated_rag_system):
-        """Test basic query without session context"""
+        """Test basic query without session context (requires API)"""
         query = "What is RAG?"
 
         try:
@@ -124,8 +125,9 @@ class TestRAGSystem:
             print(f"[FAIL] Query failed with error: {e}")
             raise
 
+    @pytest.mark.integration
     def test_query_with_session(self, populated_rag_system):
-        """Test query with session context"""
+        """Test query with session context (requires API)"""
         query = "Tell me more about vector databases"
 
         try:
@@ -149,8 +151,9 @@ class TestRAGSystem:
             print(f"[FAIL] Session query failed with error: {e}")
             raise
 
+    @pytest.mark.integration
     def test_course_specific_query(self, populated_rag_system):
-        """Test query that should find course-specific content"""
+        """Test query that should find course-specific content (requires API)"""
         query = "What is the RAG pipeline?"
 
         try:
@@ -172,8 +175,9 @@ class TestRAGSystem:
             print(f"[FAIL] Course-specific query failed with error: {e}")
             raise
 
+    @pytest.mark.integration
     def test_no_results_query(self, populated_rag_system):
-        """Test query that should return no results"""
+        """Test query that should return no results (requires API)"""
         query = "Tell me about quantum entanglement"
 
         try:
@@ -228,10 +232,12 @@ class TestRAGSystem:
 
 
 class TestRAGSystemWithRealAPI:
-    """Test RAG System with actual API calls (requires API key)"""
+    """Test RAG System with actual API calls (integration tests)"""
 
+    @pytest.mark.integration
     @pytest.mark.skipif(
-        not config.ZHIPU_API_KEY or config.ZHIPU_API_KEY == "", reason="ZHIPU_API_KEY not available"
+        not config.ZHIPU_API_KEY or config.ZHIPU_API_KEY == "",
+        reason="ZHIPU_API_KEY not available"
     )
     def test_real_query_with_api(self, populated_rag_system):
         """Test real query with actual API"""

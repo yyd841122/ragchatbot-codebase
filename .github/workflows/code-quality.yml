@@ -40,4 +40,4 @@ jobs:
       - name: Run tests
         run: |
           cd backend
-          uv run pytest -v
+          uv run pytest -v -m "not integration"

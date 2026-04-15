@@ -1,7 +1,7 @@
 @echo off
-REM Claude AI 自动化设置脚本 (Windows)
+REM Zhipu AI 自动化设置脚本 (Windows)
 
-echo 🤖 Claude AI 自动化 Issue 处理系统 - 设置向导
+echo 🤖 Zhipu AI 自动化 Issue 处理系统 - 设置向导
 echo ================================================
 
 REM 检查必要命令
@@ -36,12 +36,12 @@ if %errorlevel% neq 0 (
 )
 echo ✅ GitHub 认证已找到
 
-REM 获取 Anthropic API Key
-echo 🔑 请输入你的 Anthropic API Key:
-echo    (从 https://console.anthropic.com 获取)
-set /p ANTHROPIC_API_KEY=""
+REM 获取 Zhipu API Key
+echo 🔑 请输入你的 Zhipu AI API Key:
+echo    (从 https://open.bigmodel.cn/usercenter/apikeys 获取)
+set /p ZHIPU_API_KEY=""
 
-if "%ANTHROPIC_API_KEY%"=="" (
+if "%ZHIPU_API_KEY%"=="" (
     echo ❌ API Key 不能为空
     exit /b 1
 )
@@ -59,15 +59,15 @@ set REPO_FULL_NAME=%OWNER%/%REPO%
 
 echo    仓库名称: %REPO_FULL_NAME%
 
-REM 设置 Anthropic API Key
-echo %ANTHROPIC_API_KEY% | gh secret set ANTHROPIC_API_KEY --repo %REPO_FULL_NAME%
+REM 设置 Zhipu API Key
+echo %ZHIPU_API_KEY% | gh secret set ZHIPU_API_KEY --repo %REPO_FULL_NAME%
 
 if %errorlevel% neq 0 (
     echo ❌ 设置 secret 失败
     exit /b 1
 )
 
-echo ✅ ANTHROPIC_API_KEY secret 已设置
+echo ✅ ZHIPU_API_KEY secret 已设置
 
 REM 创建必要的目录结构
 echo 📁 创建必要的目录...

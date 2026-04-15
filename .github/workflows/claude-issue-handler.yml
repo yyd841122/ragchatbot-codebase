@@ -1,8 +1,8 @@
-name: Claude AI Issue Handler
+name: Zhipu AI Issue Handler
 
 on:
   issues:
-    types: [opened, reopened]
+    types: [opened, reopened, labeled]
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -18,7 +18,7 @@ permissions:
   pull-requests: write
 
 jobs:
-  claude-issue-handler:
+  zhipu-issue-handler:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || contains(github.event.issue.labels.*.name, 'claude-auto')
 
@@ -28,21 +28,38 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install anthropical github
+          pip install --upgrade setuptools wheel
 
-      - name: Process Issue with Claude
+      - name: Install Python dependencies
+        run: |
+          pip install zhipuai==1.0.0 PyGithub>=2.3.0 python-dotenv>=1.0.0
+
+      - name: Verify installation
+        run: |
+          python -c "import zhipuai; print('✅ zhipuai installed')"
+          python -c "import github; print('✅ PyGithub installed')"
+          python -c "import dotenv; print('✅ python-dotenv installed')"
+
+      - name: Process Issue with Zhipu AI
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
           REPO_NAME: ${{ github.repository }}
+          PYTHONUNBUFFERED: '1'
         run: |
           python .github/scripts/claude_issue_handler.py

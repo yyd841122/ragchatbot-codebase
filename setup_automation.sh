@@ -1,9 +1,9 @@
 #!/bin/bash
-# Claude AI 自动化设置脚本
+# Zhipu AI 自动化设置脚本
 
 set -e
 
-echo "🤖 Claude AI 自动化 Issue 处理系统 - 设置向导"
+echo "🤖 Zhipu AI 自动化 Issue 处理系统 - 设置向导"
 echo "================================================"
 
 # 检查必要的命令
@@ -29,14 +29,14 @@ check_github_auth() {
     echo "✅ GitHub 认证已找到"
 }
 
-# 获取 Anthropic API Key
+# 获取 Zhipu API Key
 get_api_key() {
-    echo "🔑 请输入你的 Anthropic API Key:"
-    echo "   (从 https://console.anthropic.com 获取)"
-    read -s ANTHROPIC_API_KEY
+    echo "🔑 请输入你的 Zhipu AI API Key:"
+    echo "   (从 https://open.bigmodel.cn/usercenter/apikeys 获取)"
+    read -s ZHIPU_API_KEY
     echo ""
 
-    if [ -z "$ANTHROPIC_API_KEY" ]; then
+    if [ -z "$ZHIPU_API_KEY" ]; then
         echo "❌ API Key 不能为空"
         exit 1
     fi
@@ -55,11 +55,11 @@ setup_secrets() {
 
     echo "   仓库名称: $REPO_FULL_NAME"
 
-    # 设置 Anthropic API Key
-    echo $ANTHROPIC_API_KEY | gh secret set ANTHROPIC_API_KEY --repo $REPO_FULL_NAME
+    # 设置 Zhipu API Key
+    echo $ZHIPU_API_KEY | gh secret set ZHIPU_API_KEY --repo $REPO_FULL_NAME
 
     if [ $? -eq 0 ]; then
-        echo "✅ ANTHROPIC_API_KEY secret 已设置"
+        echo "✅ ZHIPU_API_KEY secret 已设置"
     else
         echo "❌ 设置 secret 失败"
         exit 1

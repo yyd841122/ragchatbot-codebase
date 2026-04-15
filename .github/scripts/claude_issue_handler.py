@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Claude AI Issue Handler
-Automatically processes GitHub Issues using Claude AI to analyze and fix issues.
+Zhipu AI Issue Handler
+Automatically processes GitHub Issues using Zhipu AI to analyze and fix issues.
 """
 
 import os
 import sys
 import re
+import json
+import traceback
 from github import Github, GithubException
-from anthropic import Anthropic
+from zhipuai import ZhipuAI
 
 def get_issue_context(repo, issue_number):
     """Get comprehensive issue context"""
@@ -36,70 +38,81 @@ def get_issue_context(repo, issue_number):
         print(f"Error fetching issue: {e}")
         return None
 
-def analyze_with_claude(context, repo_structure):
-    """Analyze issue with Claude AI"""
+def analyze_with_zhipu(context, repo_structure):
+    """Analyze issue with Zhipu AI"""
     try:
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        api_key = os.environ.get('ZHIPU_API_KEY')
         if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not found")
+            raise ValueError("ZHIPU_API_KEY not found")
 
-        client = Anthropic(api_key=api_key)
+        client = ZhipuAI(api_key=api_key)
 
-        # Build the prompt for Claude
-        prompt = f"""You are an expert developer tasked with fixing a GitHub issue.
+        # Build the prompt for Zhipu AI
+        prompt = f"""你是一个专业的开发者，负责修复 GitHub Issue。
 
-# Issue Details
-Title: {context['title']}
-Author: {context['author']}
-Labels: {', '.join(context['labels'])}
+# Issue 详情
+标题: {context['title']}
+作者: {context['author']}
+标签: {', '.join(context['labels'])}
 
-# Issue Description
+# Issue 描述
 {context['body']}
 
-# Recent Comments
+# 最近评论
 {chr(10).join([f"{c['author']}: {c['body']}" for c in context['comments']])}
 
-# Repository Structure
+# 仓库结构
 {repo_structure}
 
-# Your Task
-Analyze this issue and provide:
-1. Root cause analysis
-2. Proposed solution approach
-3. Files that need to be modified
-4. Specific code changes needed
+# 你的任务
+分析这个 Issue 并提供：
+1. 根本原因分析
+2. 解决方案思路
+3. 需要修改的文件列表
+4. 具体的代码修改建议
 
-Please provide your response in the following format:
+请按以下格式回复：
 
-## Analysis
-[Your analysis of the issue]
+## 分析
+[对问题的分析]
 
-## Solution
-[Your proposed solution]
+## 解决方案
+[建议的解决方案]
 
-## Files to Modify
-[List of files that need changes]
+## 需要修改的文件
+[需要修改的文件列表]
 
-## Code Changes
+## 代码修改
 ```python
-# Specific code changes for each file
+# 每个文件的具体修改
 ```
 
-## Testing
-[How to test the fix]"""
+## 测试方法
+[如何测试修复]
+"""
 
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
+        print(f"Calling Zhipu AI API with model: glm-4-flash")
+
+        response = client.chat.completions.create(
+            model="glm-4-flash",  # 使用与项目相同的模型
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
             max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": prompt
-            }]
         )
 
-        return message.content[0].text
+        print(f"Zhipu AI API call successful")
+        result = response.choices[0].message.content
+        print(f"Response length: {len(result)} characters")
+
+        return result
     except Exception as e:
-        print(f"Error analyzing with Claude: {e}")
+        print(f"Error analyzing with Zhipu AI: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def get_repository_structure():
@@ -150,23 +163,23 @@ def create_pull_request(repo, issue, analysis_result):
             return False
 
         # Create pull request
-        pr_title = f"[Claude AI] Fix for issue #{issue.number}: {issue.title}"
-        pr_body = f"""## Automated Fix by Claude AI
+        pr_title = f"[Zhipu AI] 修复 Issue #{issue.number}: {issue.title}"
+        pr_body = f"""## Zhipu AI 自动修复
 
-This pull request was automatically generated to fix issue #{issue.number}.
+此 Pull Request 由 Zhipu AI 自动生成，用于修复 Issue #{issue.number}。
 
-## Original Issue
+## 原始 Issue
 {issue.title}
 
-## Analysis and Solution
+## 分析和解决方案
 {analysis_result}
 
-## Testing
-Please review and test the changes before merging.
+## 测试
+请在合并前审查和测试这些更改。
 
 ---
 
-*This PR was created by Claude AI Issue Handler*
+*此 PR 由 Zhipu AI Issue Handler 创建*
 """
 
         # Note: Actual PR creation requires commits to be made first
@@ -193,18 +206,47 @@ def add_issue_comment(repo, issue_number, message):
 def main():
     """Main workflow execution"""
     try:
+        print("=" * 60)
+        print("🤖 Zhipu AI Issue Handler Started")
+        print("=" * 60)
+
+        # Validate environment variables first
+        print("🔍 Validating environment variables...")
+
+        required_vars = ['GITHUB_TOKEN', 'REPO_NAME', 'ISSUE_NUMBER', 'ZHIPU_API_KEY']
+        missing_vars = []
+
+        for var in required_vars:
+            value = os.environ.get(var)
+            if not value:
+                missing_vars.append(var)
+            else:
+                # Hide sensitive values in logs
+                if 'KEY' in var or 'TOKEN' in var:
+                    print(f"  ✅ {var}: {'*' * 10}...{value[-4:]}")
+                else:
+                    print(f"  ✅ {var}: {value}")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        print("✅ All environment variables validated")
+
         # Initialize GitHub client
         github_token = os.environ.get('GITHUB_TOKEN')
-        if not github_token:
-            raise ValueError("GITHUB_TOKEN not found")
-
         repo_name = os.environ.get('REPO_NAME')
-        issue_number = int(os.environ.get('ISSUE_NUMBER'))
+        issue_number_str = os.environ.get('ISSUE_NUMBER')
+
+        try:
+            issue_number = int(issue_number_str)
+        except ValueError:
+            raise ValueError(f"ISSUE_NUMBER must be a number, got: {issue_number_str}")
 
         g = Github(github_token)
         repo = g.get_repo(repo_name)
 
-        print(f"Processing issue #{issue_number} in {repo_name}")
+        print(f"📝 Processing issue #{issue_number} in {repo_name}")
+        print("-" * 60)
 
         # Get issue context
         context = get_issue_context(repo, issue_number)
@@ -214,19 +256,19 @@ def main():
         # Get repository structure
         repo_structure = get_repository_structure()
 
-        # Analyze with Claude
-        print("Analyzing issue with Claude AI...")
-        analysis_result = analyze_with_claude(context, repo_structure)
+        # Analyze with Zhipu AI
+        print("Analyzing issue with Zhipu AI...")
+        analysis_result = analyze_with_zhipu(context, repo_structure)
 
         if not analysis_result:
-            raise ValueError("Failed to analyze issue with Claude")
+            raise ValueError("Failed to analyze issue with Zhipu AI")
 
         # Post initial analysis as comment
-        comment_message = f"""## 🤖 Claude AI Analysis
+        comment_message = f"""## 🤖 Zhipu AI 分析
 
 {analysis_result}
 
-I'm working on implementing the fix. Please stand by...
+正在实现修复方案，请稍候...
 """
         add_issue_comment(repo, issue_number, comment_message)
 
@@ -235,24 +277,31 @@ I'm working on implementing the fix. Please stand by...
         pr_created = create_pull_request(repo, issue, analysis_result)
 
         if pr_created:
-            success_message = "## ✅ Fix Implementation Started
+            success_message = "## ✅ 修复实现已开始
 
-I've analyzed the issue and started working on the fix. A pull request will be created shortly with the changes.
+已分析 Issue 并开始实施修复。稍后将创建包含更改的 Pull Request。
 
-Please review the analysis above and provide feedback if needed."
+请查看上面的分析结果，如有需要请提供反馈。"
             add_issue_comment(repo, issue_number, success_message)
         else:
-            error_message = "## ⚠️ Manual Intervention Required
+            error_message = "## ⚠️ 需要人工干预
 
-I've analyzed the issue and proposed a solution (see above), but was unable to automatically implement the fix.
+已分析 Issue 并提出了解决方案（见上文），但无法自动实施修复。
 
-Please review the analysis and implement the suggested changes manually."
+请查看分析结果并手动实施建议的更改。"
             add_issue_comment(repo, issue_number, error_message)
 
-        print("Issue processing completed successfully")
+        print("✅ Issue processing completed successfully")
+        print("=" * 60)
 
     except Exception as e:
-        print(f"Error in main workflow: {e}")
+        print("=" * 60)
+        print(f"❌ ERROR: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        print("=" * 60)
+        print("📋 Full traceback:")
+        traceback.print_exc()
+        print("=" * 60)
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -28,7 +28,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install zhipuai PyGithub
+          python -m pip install --upgrade pip
+          pip install -r .github/requirements.txt
+
+      - name: Verify installation
+        run: |
+          python -c "import zhipuai; print('✅ zhipuai installed')"
+          python -c "import github; print('✅ PyGithub installed')"
 
       - name: Run analysis
         env:

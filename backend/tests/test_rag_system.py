@@ -236,8 +236,7 @@ class TestRAGSystemWithRealAPI:
 
     @pytest.mark.integration
     @pytest.mark.skipif(
-        not config.ZHIPU_API_KEY or config.ZHIPU_API_KEY == "",
-        reason="ZHIPU_API_KEY not available"
+        not config.ZHIPU_API_KEY or config.ZHIPU_API_KEY == "", reason="ZHIPU_API_KEY not available"
     )
     def test_real_query_with_api(self, populated_rag_system):
         """Test real query with actual API"""

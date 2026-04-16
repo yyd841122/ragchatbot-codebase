@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(uv run:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh run:*)",
+      "Bash(curl -s \"https://api.github.com/repos/yyd841122/ragchatbot-codebase/actions/runs?per_page=1\")"
     ]
   }
 }

@@ -37,10 +37,17 @@ jobs:
           python -c "import github; print('✅ PyGithub installed')"
           python -c "import sniffio; print('✅ sniffio installed')"
 
+      - name: Prepare issue number
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ISSUE_NUMBER=${{ github.event.inputs.issue_number }}" >> $GITHUB_ENV
+          else
+            echo "ISSUE_NUMBER=${{ github.event.issue.number }}" >> $GITHUB_ENV
+          fi
+
       - name: Run analysis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.inputs.issue_number }}
           REPO: ${{ github.repository }}
         run: python .github/scripts/simple_handler.py

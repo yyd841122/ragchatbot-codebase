@@ -35,6 +35,7 @@ jobs:
         run: |
           python -c "import zhipuai; print('✅ zhipuai installed')"
           python -c "import github; print('✅ PyGithub installed')"
+          python -c "import sniffio; print('✅ sniffio installed')"
 
       - name: Run analysis
         env:

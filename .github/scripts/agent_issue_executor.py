@@ -150,19 +150,242 @@ def main() -> None:
         sys.exit(1)
     print()
 
+    # 执行 Step 2: 任务分析
+    print("="*60)
+    print("🔜 进入 Stage 2 - Step 2: 任务分析")
+    print("="*60)
+    print()
+    step2_success = False
+    try:
+        execute_step2(g, repo, issue, comment_body, comment_author)
+        step2_success = True
+        print()
+        print("="*60)
+        print("✅ Stage 2 - Step 2 完成!")
+        print("="*60)
+    except Exception as e:
+        print(f"  ❌ Step 2 执行失败: {e}", file=sys.stderr)
+        print(f"  ℹ️ Step 1 已成功完成，仅 Step 2 失败")
+        print()
+        print("="*60)
+        print("⚠️ Stage 2 - Step 2 失败，但整体流程继续")
+        print("="*60)
+    print()
+
     # 完成
     print("="*60)
-    print("✅ Stage 2 - Step 1 完成!")
+    print("✅ Stage 2 全部流程完成!")
     print("="*60)
     print()
     print("📊 本次执行内容:")
     print("  ✅ 识别 /zhipu-apply 触发")
     print("  ✅ 读取 Issue 上下文")
     print("  ✅ 输出 Stage 2 日志")
-    print("  ✅ 回复预备流程评论")
+    print("  ✅ 回复预备流程评论（Step 1）")
+    print("  ✅ 查找 Stage 1 计划（Step 2）")
+    print("  ✅ 提取任务目标（Step 2）")
+    print("  ✅ 回复任务分析评论（Step 2）")
     print()
-    print("🔜 下一步: 实现 Step 2 - 读取 Issue 和生成计划")
+    print("🔜 下一步: 实现 Step 3 - 创建工作分支")
     print()
+
+
+def get_existing_plan(issue):
+    """查找 Issue 中是否已有 Stage 1 计划
+
+    识别方式：查找 "## 🤖 Zhipu Fix Plan" 标题
+    """
+    try:
+        comments = issue.get_comments()
+
+        # 只检查最近 20 条评论（从新到旧）
+        recent_comments = list(comments)[-20:]
+
+        for comment in reversed(recent_comments):
+            body = comment.body or ""
+
+            # 查找固定标题
+            if "## 🤖 Zhipu Fix Plan" in body:
+                return body
+
+        return None
+
+    except Exception as e:
+        print(f"  ⚠️ 查找计划出错: {e}")
+        return None
+
+
+def extract_task_objective(issue, existing_plan):
+    """提取任务目标
+
+    优先级：
+    1. 从 Stage 1 计划的 "问题理解" 提取
+    2. 降级：使用 Issue 标题
+    """
+    if existing_plan:
+        # 尝试从 Stage 1 计划提取
+        if "### 问题理解" in existing_plan:
+            lines = existing_plan.split('\n')
+            for i, line in enumerate(lines):
+                if "### 问题理解" in line:
+                    # 提取接下来 3-5 行
+                    objective_lines = []
+                    for j in range(i+1, min(i+6, len(lines))):
+                        if lines[j].strip() and not lines[j].startswith('#') and not lines[j].startswith('-'):
+                            objective_lines.append(lines[j].strip())
+                        elif lines[j].startswith('#'):
+                            break
+                    if objective_lines:
+                        return '\n'.join(objective_lines)
+
+    # 降级：使用 Issue 标题
+    title = issue.title if issue.title else "待明确"
+    return f"任务目标：{title}"
+
+
+def build_step2_reply_message(issue_title, task_objective, has_plan, issue_body, existing_plan=None):
+    """构建 Step 2 回复消息"""
+    repo_name = os.getenv('REPO', '')
+
+    if has_plan:
+        # 模式 A：有 Stage 1 计划
+        # 尝试提取 Todo List
+        steps_text = ""
+        if existing_plan and "### Todo List" in existing_plan:
+            lines = existing_plan.split('\n')
+            in_todo = False
+            todo_lines = []
+            for line in lines:
+                if "### Todo List" in line or "### 计划步骤" in line:
+                    in_todo = True
+                    continue
+                if in_todo and line.strip():
+                    if line.startswith('- [ ]') or line.startswith('* '):
+                        todo_lines.append(line.strip())
+                    elif line.startswith('#') or line.startswith('**'):
+                        break
+            if todo_lines:
+                steps_text = '\n'.join(todo_lines[:5])
+
+        # 尝试提取文件范围
+        files_text = ""
+        if existing_plan and ("### 计划修改文件" in existing_plan or "计划修改文件" in existing_plan):
+            lines = existing_plan.split('\n')
+            in_files = False
+            file_lines = []
+            for line in lines:
+                if "### 计划修改文件" in line:
+                    in_files = True
+                    continue
+                if in_files and line.strip():
+                    if line.startswith('- `') or line.startswith('* `'):
+                        file_lines.append(line.strip())
+                    elif line.startswith('#') or line.startswith('**'):
+                        break
+            if file_lines:
+                files_text = '\n'.join(file_lines[:5])
+
+        return f"""## 🤖 Stage 2 任务分析
+
+**状态**: ✅ 已完成分析
+
+**任务目标**: {task_objective}
+
+**执行步骤**:
+{steps_text if steps_text else "*将基于 Stage 1 计划执行*"}
+
+**涉及文件**:
+{files_text if files_text else "*将基于 Stage 1 计划确定*"}
+
+---
+
+**⚠️ 当前仅做分析，未执行代码修改**
+
+后续版本将逐步实现：创建分支 → 修改代码 → 创建 PR
+
+---
+🤖 Zhipu AI Stage 2 | {repo_name}
+"""
+
+    else:
+        # 模式 B：无 Stage 1 计划（降级模式）
+        # 构建上下文摘要
+        context_parts = []
+
+        # 添加标题
+        if issue_title:
+            context_parts.append(f"**Issue 标题**: {issue_title}")
+
+        # 添加正文前 100 字符
+        if issue_body and len(issue_body) > 0:
+            preview = issue_body[:100] + "..." if len(issue_body) > 100 else issue_body
+            context_parts.append(f"**Issue 正文**: {preview}")
+
+        context_text = '\n\n'.join(context_parts) if context_parts else "**Issue 信息**: 标题和正文均为空"
+
+        return f"""## 🤖 Stage 2 任务分析
+
+**状态**: ⚠️ 基础分析完成
+
+**任务目标**: {task_objective}
+
+**Issue 上下文**:
+{context_text}
+
+**执行步骤**:
+*将基于 Issue 上下文确定*
+
+**涉及文件**:
+当前未明确具体文件范围
+
+---
+
+**💡 建议**: 先评论 `@zhipu` 生成详细执行计划，再执行 `/zhipu-apply`
+
+---
+
+**⚠️ 当前仅做分析，未执行代码修改**
+
+后续版本将逐步实现：创建分支 → 修改代码 → 创建 PR
+
+---
+🤖 Zhipu AI Stage 2 | {repo_name}
+"""
+
+
+def execute_step2(g, repo, issue, comment_body, comment_author):
+    """执行 Step 2 任务分析"""
+    print("🔍 查找 Stage 1 计划...")
+
+    # 1. 查找现有计划
+    existing_plan = get_existing_plan(issue)
+    if existing_plan:
+        print("  ✅ 找到 Stage 1 计划")
+    else:
+        print("  ℹ️ 未找到 Stage 1 计划，将使用基础分析模式")
+
+    # 2. 提取任务目标
+    print("🎯 提取任务目标...")
+    task_objective = extract_task_objective(issue, existing_plan)
+    print(f"  ✅ 任务目标: {task_objective[:50]}...")
+
+    # 3. 生成回复
+    print("💬 生成回复消息...")
+    reply_message = build_step2_reply_message(
+        issue_title=issue.title,
+        task_objective=task_objective,
+        has_plan=(existing_plan is not None),
+        issue_body=issue.body,
+        existing_plan=existing_plan
+    )
+
+    # 4. 回复到 Issue
+    try:
+        issue.create_comment(reply_message)
+        print("  ✅ 成功回复到 Issue")
+    except Exception as e:
+        print(f"  ❌ 回复失败: {e}")
+        raise
 
 
 if __name__ == "__main__":

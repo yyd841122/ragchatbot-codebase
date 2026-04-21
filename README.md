@@ -6,7 +6,6 @@ A Retrieval-Augmented Generation (RAG) system designed to answer questions about
 
 This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Anthropic's Claude for AI generation, and provides a web interface for interaction.
 
-
 ## Prerequisites
 
 - Python 3.13 or higher
@@ -94,6 +93,7 @@ uv run pytest -v
 ### Pre-commit Hooks (Optional)
 
 Install pre-commit hooks for automatic quality checks:
+
 ```bash
 # Install pre-commit framework
 pip install pre-commit
@@ -104,3 +104,44 @@ pre-commit install
 # Now hooks will run automatically on each commit
 ```
 
+## Issue Tracking
+
+- [test: stage5 modify README.md](#test-stage5-modify-readme-md)
+
+## 🤖 Zhipu Fix Plan
+
+### Stage 5 Update
+
+- **Completed Tasks**:
+  - Updated the README.md with the initial setup instructions.
+  - Implemented the basic structure of the RAG system.
+  - Integrated ChromaDB for vector storage.
+  - Integrated Anthropic's Claude for AI generation.
+
+- **To-Do Tasks**:
+  - Refine the user interface for better interaction.
+  - Optimize the AI responses for better context awareness.
+  - Conduct thorough testing of the system.
+  - Document the system architecture and usage.
+
+### Running the Application
+
+To run the application, follow the instructions in the "Running the Application" section.
+
+### Development Tools
+
+The project includes tools for code quality and testing, as described in the "Development Tools" section.
+
+### Testing
+
+To run the test suite, navigate to the backend directory and execute the following command:
+
+```bash
+uv run pytest -v
+```
+
+### Pre-commit Hooks
+
+To install pre-commit hooks for automatic quality checks, follow the instructions in the "Pre-commit Hooks (Optional)" section.
+
+For detailed information on each section, refer to the respective sections in the README.md file.

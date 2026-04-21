@@ -27,6 +27,7 @@ sys.path.insert(0, '.github/scripts')
 
 from github import Github
 from github import UnknownObjectException
+import zhipuai
 
 
 def get_env_var(var_name: str) -> str:
@@ -218,6 +219,48 @@ def main() -> None:
         print("="*60)
     print()
 
+    # 执行 Step 5: 文件修改并提交
+    print("="*60)
+    print("🔜 进入 Stage 2 - Step 5: 文件修改并提交")
+    print("="*60)
+    print()
+    step5_success = False
+    try:
+        if step4_success:  # 仅在 Step 4 成功后执行
+            step5_result = execute_step5(g, repo, issue, issue_number)
+
+            # 根据返回结果判断状态
+            if step5_result['status'] == 'success':
+                step5_success = True
+                print()
+                print("="*60)
+                print("✅ Stage 2 - Step 5 完成!")
+                print("="*60)
+            elif step5_result['status'] == 'skipped':
+                print()
+                print("="*60)
+                print(f"⚠️ Stage 2 - Step 5 跳过: {step5_result['reason']}")
+                print("="*60)
+            else:  # failed
+                print()
+                print("="*60)
+                print(f"❌ Stage 2 - Step 5 失败: {step5_result['reason']}")
+                print("="*60)
+        else:
+            print("  ℹ️ Step 4 失败，跳过 Step 5")
+            print()
+            print("="*60)
+            print("⚠️ Stage 2 - Step 5 跳过")
+            print("="*60)
+    except Exception as e:
+        print(f"  ❌ Step 5 执行失败: {e}", file=sys.stderr)
+        print(f"  ℹ️ Step 1/2/3/4 已成功完成，仅 Step 5 失败")
+        print()
+        print("="*60)
+        print("⚠️ Stage 2 - Step 5 失败，但整体流程继续")
+        print("="*60)
+    print()
+
     # 完成
     print("="*60)
     print("✅ Stage 2 全部流程完成!")
@@ -236,6 +279,11 @@ def main() -> None:
     print("  ✅ 读取第一个目标文件（Step 4）")
     print("  ✅ 生成修改预览（Step 4）")
     print("  ✅ 回复预览结果（Step 4）")
+    if step5_success:
+        print("  ✅ 修改文件并创建 commit（Step 5）")
+        print("  ✅ 回复修改结果（Step 5）")
+    else:
+        print("  ⚠️ Step 5 未执行或失败")
     print()
     print("🔜 后续步骤将在下一阶段实现")
     print()
@@ -960,6 +1008,485 @@ def execute_step4(g, repo, issue, issue_number: int):
         raise
 
     print(f"  ✅ Step 4 完成")
+
+
+def generate_modified_content(
+    current_content: str,
+    issue_title: str,
+    issue_body: str,
+    plan: str,
+    file_path: str
+) -> str:
+    """调用 Zhipu AI 生成修改后的文件内容
+
+    Args:
+        current_content: 当前文件内容
+        issue_title: Issue 标题
+        issue_body: Issue 正文
+        plan: Stage 1 计划
+        file_path: 文件路径
+
+    Returns:
+        str: AI 生成的修改后内容，如果失败则返回空字符串
+    """
+    try:
+        api_key = os.getenv("ZHIPU_API_KEY")
+        if not api_key:
+            print("  ❌ ZHIPU_API_KEY 未设置")
+            return ""
+
+        client = zhipuai.ZhipuAI(api_key=api_key)
+
+        prompt = f"""你是一个文档修改助手。任务：基于用户需求修改文档内容。
+
+## 当前文件路径
+{file_path}
+
+## 当前文件内容
+```
+{current_content}
+```
+
+## Issue 标题
+{issue_title}
+
+## Issue 正文
+{issue_body}
+
+## 执行计划
+{plan}
+
+---
+
+请基于以上信息生成修改后的完整文档内容。
+
+要求：
+1. 只返回修改后的完整文档内容
+2. 不要包含解释、不要包含 markdown 代码块标记（\`\`\`）
+3. 直接返回可用的文档内容
+4. 保持文档的可读性和结构
+"""
+
+        print("  🤖 调用 Zhipu AI 生成修改内容...")
+        response = client.chat.completions.create(
+            model="glm-4-flash",
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            temperature=0.3,
+            max_tokens=4000,
+        )
+
+        if response.choices and len(response.choices) > 0:
+            content = response.choices[0].message.content
+            if content:
+                # 清理可能的 markdown 代码块标记
+                content = content.strip()
+                if content.startswith("```"):
+                    # 移除第一行的 ```markdown 或 ```
+                    lines = content.split('\n')
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    # 移除最后一行的 ```
+                    if lines[-1].strip() == "```":
+                        lines = lines[:-1]
+                    content = '\n'.join(lines)
+                print("  ✅ AI 生成内容成功")
+                return content.strip()
+
+        print("  ❌ Zhipu AI 返回了空响应")
+        return ""
+
+    except Exception as e:
+        print(f"  ❌ 调用 Zhipu AI 失败: {e}")
+        return ""
+
+
+def validate_generated_content(
+    new_content: str,
+    original_content: str
+) -> dict:
+    """验证 AI 生成内容的合法性
+
+    Args:
+        new_content: AI 生成的新内容
+        original_content: 原始文件内容
+
+    Returns:
+        dict: {
+            'valid': bool,
+            'reason': str (如果不合法，说明原因)
+        }
+    """
+    # 检查 1：新内容不能为空
+    if not new_content or not new_content.strip():
+        return {
+            'valid': False,
+            'reason': 'AI 生成内容为空'
+        }
+
+    # 检查 2：新内容不能与原内容完全相同
+    if new_content == original_content:
+        return {
+            'valid': False,
+            'reason': 'AI 生成内容与原内容完全相同（无需修改）'
+        }
+
+    # 检查 3：新内容长度不能小于原内容长度的 20%
+    original_length = len(original_content)
+    new_length = len(new_content)
+    if new_length < original_length * 0.2:
+        return {
+            'valid': False,
+            'reason': f'AI 生成内容过短（{new_length} 字符 < 原内容长度 20% {int(original_length * 0.2)} 字符）'
+        }
+
+    return {
+        'valid': True,
+        'reason': None
+    }
+
+
+def build_step5_success_message(
+    file_path: str,
+    branch_name: str,
+    commit_sha: str,
+    commit_message: str
+) -> str:
+    """构建 Step 5 修改成功时的回复消息
+
+    Args:
+        file_path: 修改的文件路径
+        branch_name: 工作分支名称
+        commit_sha: Commit SHA（完整）
+        commit_message: Commit message 第一行
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 5 文件修改成功
+
+**状态**: ✅ 已成功在工作分支上修改文件并提交
+
+**修改文件**: `{file_path}`
+
+**工作分支**: `{branch_name}`
+
+**Commit SHA**: `{commit_sha[:7]}`
+
+**Commit message**: `{commit_message}`
+
+---
+
+**⚠️ 重要提示**：
+
+- 当前仅在工作分支上修改，尚未合并到默认分支
+- 尚未创建 Draft PR（将在下一步创建）
+
+---
+🤖 Zhipu AI Stage 5 | {repo_name}
+"""
+
+
+def build_step5_failure_message(file_path: str, error_msg: str) -> str:
+    """构建 Step 5 修改失败时的回复消息
+
+    Args:
+        file_path: 尝试修改的文件路径
+        error_msg: 错误信息
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 5 文件修改失败
+
+**状态**: ❌ 修改文件时发生错误
+
+**目标文件**: `{file_path}`
+
+**错误原因**: {error_msg}
+
+---
+
+**ℹ️ Step 1/2/3/4 已成功完成**
+
+---
+🤖 Zhipu AI Stage 5 | {repo_name}
+"""
+
+
+def build_step5_unsupported_file_message(file_path: str) -> str:
+    """构建 Step 5 不支持的文件类型时的回复消息
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 5 跳过非支持的文件
+
+**状态**: ⚠️ 当前目标文件暂不支持修改
+
+**目标文件**: `{file_path}`
+
+**原因**: Stage 5 当前 MVP 版本仅支持修改 `README.md` 文件
+
+**说明**：
+- 其他 `.md` / `.txt` 文件后续版本将支持
+- 代码文件（.py, .js 等）后续版本将支持
+
+---
+
+**ℹ️ Step 1/2/3/4 已成功完成**
+
+---
+🤖 Zhipu AI Stage 5 | {repo_name}
+"""
+
+
+def build_step5_skip_message(file_path: str, reason: str) -> str:
+    """构建 Step 5 跳过修改时的回复消息
+
+    Args:
+        file_path: 文件路径
+        reason: 跳过原因
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 5 文件内容未变更
+
+**状态**: ⚠️ AI 生成结果显示无需修改该文件
+
+**目标文件**: `{file_path}`
+
+**原因**: {reason}
+
+**说明**: 未创建 commit
+
+---
+
+**ℹ️ Step 1/2/3/4 已成功完成**
+
+---
+🤖 Zhipu AI Stage 5 | {repo_name}
+"""
+
+
+def execute_step5(g, repo, issue, issue_number: int) -> dict:
+    """执行 Step 5 文件修改并提交
+
+    Args:
+        g: Github client
+        repo: Github repository object
+        issue: Github issue object
+        issue_number: Issue 编号
+
+    Returns:
+        dict: {
+            'status': str,  # 'success', 'skipped', 'failed'
+            'reason': str,  # 原因说明（skipped/failed 时）
+            'file_path': str,  # 文件路径
+            'commit_sha': str,  # Commit SHA（仅 success 时）
+        }
+    """
+    print("🔍 准备执行文件修改...")
+
+    # 1. 生成工作分支名称（复用 Step 3 的逻辑）
+    branch_name = generate_branch_name(issue_number)
+    print(f"  📌 工作分支: {branch_name}")
+
+    # 2. 获取 Stage 1 计划（复用 Step 2 的逻辑）
+    print("🔍 查找 Stage 1 计划...")
+    existing_plan = get_existing_plan(issue)
+
+    if not existing_plan:
+        print("  ℹ️ 未找到 Stage 1 计划")
+        reply_message = build_step5_failure_message(
+            file_path="(未知)",
+            error_msg="未找到 Stage 1 计划"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': '未找到 Stage 1 计划',
+            'file_path': '(未知)',
+            'commit_sha': None
+        }
+
+    print("  ✅ 找到 Stage 1 计划")
+
+    # 3. 提取第一个文件路径
+    print("🔍 提取第一个文件路径...")
+    file_path = extract_first_file_path(existing_plan)
+
+    if not file_path:
+        print("  ℹ️ 未识别到文件路径")
+        reply_message = build_step5_failure_message(
+            file_path="(未知)",
+            error_msg="未识别到文件路径"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': '未识别到文件路径',
+            'file_path': '(未知)',
+            'commit_sha': None
+        }
+
+    print(f"  ✅ 文件路径: {file_path}")
+
+    # 4. 检查文件扩展名（仅支持 README.md）
+    print("🔍 检查文件类型...")
+    basename = os.path.basename(file_path).lower()
+
+    if basename != "readme.md":
+        print(f"  ℹ️ 文件 {basename} 不在支持范围内（仅支持 README.md）")
+        reply_message = build_step5_unsupported_file_message(file_path)
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复跳过消息")
+        return {
+            'status': 'skipped',
+            'reason': f'文件 {basename} 不在支持范围内（仅支持 README.md）',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print(f"  ✅ 文件类型支持: {basename}")
+
+    # 5. 读取文件当前内容（复用 Step 4 的逻辑）
+    print(f"📖 读取文件当前内容（分支: {branch_name}）...")
+    read_result = read_file_content_safe(repo, file_path, branch_name)
+
+    if not read_result['success']:
+        print(f"  ❌ 读取失败: {read_result['error']}")
+        reply_message = build_step5_failure_message(file_path, read_result['error'])
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'读取文件失败: {read_result["error"]}',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print(f"  ✅ 读取成功，文件大小: {read_result['size']} bytes")
+    current_content = read_result['content']
+
+    # 6. 调用 AI 生成修改后的内容
+    print("🤖 调用 AI 生成修改内容...")
+    new_content = generate_modified_content(
+        current_content=current_content,
+        issue_title=issue.title,
+        issue_body=issue.body or "",
+        plan=existing_plan,
+        file_path=file_path
+    )
+
+    if not new_content:
+        print("  ❌ AI 生成内容失败")
+        reply_message = build_step5_failure_message(file_path, "AI 生成内容失败")
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': 'AI 生成内容失败',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
+
+    # 7. 验证生成内容
+    print("🔍 验证生成内容...")
+    validation = validate_generated_content(new_content, current_content)
+
+    if not validation['valid']:
+        print(f"  ⚠️ 验证失败: {validation['reason']}")
+        reply_message = build_step5_skip_message(file_path, validation['reason'])
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复跳过消息")
+        return {
+            'status': 'skipped',
+            'reason': validation['reason'],
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print("  ✅ 验证通过")
+
+    # 8. 写入文件并创建 commit
+    print("💾 写入文件并创建 commit...")
+    try:
+        # 获取当前文件的 sha
+        content_file = repo.get_contents(file_path, ref=branch_name)
+
+        # 构建 commit message
+        commit_message = f"docs/issue-{issue_number}: modify {file_path}\n\n{issue.title}\n\nRef: #{issue_number}"
+
+        # 更新文件
+        commit = repo.update_file(
+            path=file_path,
+            message=commit_message,
+            content=new_content,
+            sha=content_file.sha,
+            branch=branch_name
+        )
+
+        commit_sha = commit['commit'].sha
+        print(f"  ✅ Commit 创建成功: {commit_sha[:7]}")
+
+    except Exception as e:
+        print(f"  ❌ 写入文件或创建 commit 失败: {e}")
+        reply_message = build_step5_failure_message(file_path, f"写入文件失败: {str(e)}")
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'写入文件失败: {str(e)}',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    # 9. 生成成功回复
+    print("💬 生成成功回复...")
+    reply_message = build_step5_success_message(
+        file_path=file_path,
+        branch_name=branch_name,
+        commit_sha=commit_sha,
+        commit_message=f"docs/issue-{issue_number}: modify {file_path}"
+    )
+
+    # 10. 回复到 Issue
+    try:
+        issue.create_comment(reply_message)
+        print("  ✅ 成功回复到 Issue")
+    except Exception as e:
+        print(f"  ❌ 回复失败: {e}")
+        raise
+
+    print(f"  ✅ Step 5 完成")
+
+    return {
+        'status': 'success',
+        'reason': None,
+        'file_path': file_path,
+        'commit_sha': commit_sha
+    }
 
 
 if __name__ == "__main__":

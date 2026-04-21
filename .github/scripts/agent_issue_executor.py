@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, '.github/scripts')
 
 from github import Github
-from github.UnknownObjectException import UnknownObjectException
+from github import UnknownObjectException
 
 
 def get_env_var(var_name: str) -> str:

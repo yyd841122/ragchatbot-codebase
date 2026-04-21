@@ -20,6 +20,7 @@ Stage 2 - Step 1 功能：
 
 import os
 import sys
+import base64
 
 # 添加 scripts 目录到 Python 路径，以便导入第一阶段的模块
 sys.path.insert(0, '.github/scripts')
@@ -195,6 +196,28 @@ def main() -> None:
         print("="*60)
     print()
 
+    # 执行 Step 4: 代码修改预览
+    print("="*60)
+    print("🔜 进入 Stage 2 - Step 4: 代码修改预览")
+    print("="*60)
+    print()
+    step4_success = False
+    try:
+        execute_step4(g, repo, issue, issue_number)
+        step4_success = True
+        print()
+        print("="*60)
+        print("✅ Stage 2 - Step 4 完成!")
+        print("="*60)
+    except Exception as e:
+        print(f"  ❌ Step 4 执行失败: {e}", file=sys.stderr)
+        print(f"  ℹ️ Step 1/2/3 已成功完成，仅 Step 4 失败")
+        print()
+        print("="*60)
+        print("⚠️ Stage 2 - Step 4 失败，但整体流程继续")
+        print("="*60)
+    print()
+
     # 完成
     print("="*60)
     print("✅ Stage 2 全部流程完成!")
@@ -210,6 +233,9 @@ def main() -> None:
     print("  ✅ 回复任务分析评论（Step 2）")
     print("  ✅ 创建工作分支（Step 3）")
     print("  ✅ 回复分支创建结果（Step 3）")
+    print("  ✅ 读取第一个目标文件（Step 4）")
+    print("  ✅ 生成修改预览（Step 4）")
+    print("  ✅ 回复预览结果（Step 4）")
     print()
     print("🔜 后续步骤将在下一阶段实现")
     print()
@@ -609,6 +635,331 @@ def execute_step3(g, repo, issue, issue_number: int):
         raise
 
     print(f"  ✅ Step 3 完成，状态: {status}")
+
+
+def extract_first_file_path(existing_plan: str) -> str:
+    """从 Stage 1 计划中提取第一个文件路径
+
+    Args:
+        existing_plan: Stage 1 计划的完整内容
+
+    Returns:
+        str: 第一个文件路径，如果未找到则返回空字符串
+    """
+    if not existing_plan:
+        return ""
+
+    # 查找"计划修改文件"章节
+    lines = existing_plan.split('\n')
+    in_target_section = False
+
+    for line in lines:
+        # 检测是否进入目标章节
+        if "### 计划修改文件" in line:
+            in_target_section = True
+            continue
+
+        # 如果进入目标章节，开始提取文件路径
+        if in_target_section:
+            # 跳过空行
+            if not line.strip():
+                continue
+
+            # 遇到下一个章节标题，停止查找
+            if line.strip().startswith('###'):
+                break
+
+            # 尝试提取文件路径（支持多种格式）
+            # 格式1: Markdown 列表: - `backend/app.py`
+            # 格式2: 仅反引号: `backend/app.py`
+            # 格式3: 普通文本: backend/app.py
+
+            # 去除 Markdown 列表符号
+            cleaned_line = line.strip()
+            if cleaned_line.startswith('- '):
+                cleaned_line = cleaned_line[2:].strip()
+
+            # 提取反引号内的内容
+            if '`' in cleaned_line:
+                # 提取第一个反引号对内的内容
+                start = cleaned_line.find('`')
+                end = cleaned_line.find('`', start + 1)
+                if start != -1 and end != -1:
+                    file_path = cleaned_line[start + 1:end].strip()
+                    if file_path:
+                        return file_path
+
+            # 如果没有反引号，直接使用整行（过滤掉明显不是文件路径的内容）
+            elif cleaned_line and not cleaned_line.startswith('*') and not cleaned_line.startswith('#'):
+                # 简单的启发式检查：看起来像文件路径（包含斜杠或.py等）
+                if '/' in cleaned_line or '.' in cleaned_line:
+                    return cleaned_line
+
+    return ""
+
+
+def read_file_content_safe(repo, file_path: str, branch_name: str) -> dict:
+    """安全读取指定分支的文件内容
+
+    Args:
+        repo: Github repository object
+        file_path: 文件路径
+        branch_name: 分支名称
+
+    Returns:
+        dict: {
+            'success': bool,
+            'content': str (base64 解码后的内容),
+            'size': int (文件大小，字节数),
+            'error': str (错误信息，仅在失败时)
+        }
+    """
+    try:
+        # 获取文件内容
+        content_file = repo.get_contents(file_path, ref=branch_name)
+
+        # 检查是否为文件（而不是目录）
+        if content_file.type == 'dir':
+            return {
+                'success': False,
+                'content': '',
+                'size': 0,
+                'error': f"路径 `{file_path}` 是目录而非文件"
+            }
+
+        # 解码内容
+        decoded_content = base64.b64decode(content_file.content).decode('utf-8')
+
+        return {
+            'success': True,
+            'content': decoded_content,
+            'size': content_file.size or len(decoded_content),
+            'error': None
+        }
+
+    except UnknownObjectException:
+        return {
+            'success': False,
+            'content': '',
+            'size': 0,
+            'error': f"文件 `{file_path}` 在分支 `{branch_name}` 上不存在"
+        }
+    except Exception as e:
+        return {
+            'success': False,
+            'content': '',
+            'size': 0,
+            'error': f"读取文件失败: {str(e)}"
+        }
+
+
+def build_step4_reply_message(
+    issue_number: int,
+    branch_name: str,
+    file_path: str,
+    file_size: int,
+    content_preview: str,
+    has_multiple_files: bool = False
+) -> str:
+    """构建 Step 4 预览成功时的回复消息
+
+    Args:
+        issue_number: Issue 编号
+        branch_name: 工作分支名称
+        file_path: 文件路径
+        file_size: 文件大小（字节数）
+        content_preview: 内容摘要（前 80 个字符）
+        has_multiple_files: 是否存在多个文件（True 时添加提示）
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    # 构建多文件提示
+    multiple_files_hint = ""
+    if has_multiple_files:
+        multiple_files_hint = "\n\n**⚠️ 当前 MVP 版本仅预览第一个文件，其余文件后续扩展**"
+
+    return f"""## 🤖 Stage 4 代码修改预览
+
+**状态**: ✅ 预览已生成
+
+**工作分支**: `{branch_name}`
+
+**预览文件**: `{file_path}`
+
+**文件大小**: {file_size} bytes
+
+**内容摘要**:
+```
+{content_preview}
+```{multiple_files_hint}
+
+---
+
+**⚠️ 当前仅是预览，尚未真正写入仓库**
+
+---
+🤖 Zhipu AI Stage 4 | {repo_name}
+"""
+
+
+def build_step4_failure_message(file_path: str, error_msg: str) -> str:
+    """构建 Step 4 文件读取失败时的回复消息
+
+    Args:
+        file_path: 尝试读取的文件路径
+        error_msg: 错误信息
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 4 代码修改预览
+
+**状态**: ❌ 文件读取失败
+
+**尝试读取的文件**: `{file_path}`
+
+**失败原因**: {error_msg}
+
+---
+
+**ℹ️ Step 1/2/3 已成功完成**
+
+---
+🤖 Zhipu AI Stage 4 | {repo_name}
+"""
+
+
+def build_step4_no_file_message() -> str:
+    """构建 Step 4 未识别到文件时的回复消息
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## 🤖 Stage 4 代码修改预览
+
+**状态**: ⚠️ 未识别到修改文件
+
+**问题**: 从 Stage 1 计划中未找到"计划修改文件"章节或章节下无文件列表
+
+**建议**:
+- 先评论 `@zhipu` 生成详细执行计划
+- 或在 Issue 中明确指定要修改的文件路径
+
+---
+
+**ℹ️ Step 1/2/3 已成功完成**
+
+---
+🤖 Zhipu AI Stage 4 | {repo_name}
+"""
+
+
+def execute_step4(g, repo, issue, issue_number: int):
+    """执行 Step 4 代码修改预览"""
+    print("🔍 准备执行代码修改预览...")
+
+    # 1. 生成工作分支名称（复用 Step 3 的逻辑）
+    branch_name = generate_branch_name(issue_number)
+    print(f"  📌 工作分支: {branch_name}")
+
+    # 2. 获取 Stage 1 计划（复用 Step 2 的逻辑）
+    print("🔍 查找 Stage 1 计划...")
+    existing_plan = get_existing_plan(issue)
+
+    if not existing_plan:
+        print("  ℹ️ 未找到 Stage 1 计划")
+        # 回复：未识别到文件
+        reply_message = build_step4_no_file_message()
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复未识别到文件消息")
+        return
+
+    print("  ✅ 找到 Stage 1 计划")
+
+    # 3. 提取第一个文件路径
+    print("🔍 提取第一个文件路径...")
+    file_path = extract_first_file_path(existing_plan)
+
+    if not file_path:
+        print("  ℹ️ 未识别到文件路径")
+        # 回复：未识别到文件
+        reply_message = build_step4_no_file_message()
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复未识别到文件消息")
+        return
+
+    print(f"  ✅ 文件路径: {file_path}")
+
+    # 4. 检查是否存在多个文件
+    has_multiple_files = False
+    lines = existing_plan.split('\n')
+    in_target_section = False
+    file_count = 0
+    for line in lines:
+        if "### 计划修改文件" in line:
+            in_target_section = True
+            continue
+        if in_target_section:
+            if not line.strip():
+                continue
+            if line.strip().startswith('###'):
+                break
+            # 简单计数：包含反引号或斜杠的行
+            if '`' in line or '/' in line:
+                file_count += 1
+
+    if file_count > 1:
+        has_multiple_files = True
+        print(f"  ℹ️ 检测到 {file_count} 个文件，当前仅预览第一个")
+
+    # 5. 读取文件内容
+    print(f"📖 读取文件内容（分支: {branch_name}）...")
+    result = read_file_content_safe(repo, file_path, branch_name)
+
+    if not result['success']:
+        print(f"  ❌ 读取失败: {result['error']}")
+        # 回复：文件读取失败
+        reply_message = build_step4_failure_message(file_path, result['error'])
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复文件读取失败消息")
+        return
+
+    print(f"  ✅ 读取成功，文件大小: {result['size']} bytes")
+
+    # 6. 生成内容摘要（固定 80 个字符）
+    content_preview = result['content'][:80]
+    if len(result['content']) > 80:
+        content_preview += "..."
+
+    print(f"  📝 内容摘要: {content_preview[:50]}...")
+
+    # 7. 生成回复
+    print("💬 生成回复消息...")
+    reply_message = build_step4_reply_message(
+        issue_number=issue_number,
+        branch_name=branch_name,
+        file_path=file_path,
+        file_size=result['size'],
+        content_preview=content_preview,
+        has_multiple_files=has_multiple_files
+    )
+
+    # 8. 回复到 Issue
+    try:
+        issue.create_comment(reply_message)
+        print("  ✅ 成功回复到 Issue")
+    except Exception as e:
+        print(f"  ❌ 回复失败: {e}")
+        raise
+
+    print(f"  ✅ Step 4 完成")
 
 
 if __name__ == "__main__":

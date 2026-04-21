@@ -25,6 +25,7 @@ import sys
 sys.path.insert(0, '.github/scripts')
 
 from github import Github
+from github.UnknownObjectException import UnknownObjectException
 
 
 def get_env_var(var_name: str) -> str:
@@ -172,6 +173,28 @@ def main() -> None:
         print("="*60)
     print()
 
+    # 执行 Step 3: 创建工作分支
+    print("="*60)
+    print("🔜 进入 Stage 2 - Step 3: 创建工作分支")
+    print("="*60)
+    print()
+    step3_success = False
+    try:
+        execute_step3(g, repo, issue, issue_number)
+        step3_success = True
+        print()
+        print("="*60)
+        print("✅ Stage 2 - Step 3 完成!")
+        print("="*60)
+    except Exception as e:
+        print(f"  ❌ Step 3 执行失败: {e}", file=sys.stderr)
+        print(f"  ℹ️ Step 1 和 Step 2 已成功完成，仅 Step 3 失败")
+        print()
+        print("="*60)
+        print("⚠️ Stage 2 - Step 3 失败，但整体流程继续")
+        print("="*60)
+    print()
+
     # 完成
     print("="*60)
     print("✅ Stage 2 全部流程完成!")
@@ -185,8 +208,10 @@ def main() -> None:
     print("  ✅ 查找 Stage 1 计划（Step 2）")
     print("  ✅ 提取任务目标（Step 2）")
     print("  ✅ 回复任务分析评论（Step 2）")
+    print("  ✅ 创建工作分支（Step 3）")
+    print("  ✅ 回复分支创建结果（Step 3）")
     print()
-    print("🔜 下一步: 实现 Step 3 - 创建工作分支")
+    print("🔜 后续步骤将在下一阶段实现")
     print()
 
 
@@ -386,6 +411,204 @@ def execute_step2(g, repo, issue, comment_body, comment_author):
     except Exception as e:
         print(f"  ❌ 回复失败: {e}")
         raise
+
+
+def generate_branch_name(issue_number: int) -> str:
+    """生成工作分支名称
+
+    命名规则: zhipu/issue-{issue_number}
+    """
+    return f"zhipu/issue-{issue_number}"
+
+
+def get_default_branch(repo) -> str:
+    """获取仓库默认分支名称"""
+    try:
+        default_branch = repo.default_branch
+        if not default_branch:
+            raise ValueError("default_branch is None")
+        return default_branch
+    except Exception as e:
+        print(f"  ❌ 获取默认分支失败: {e}")
+        raise
+
+
+def branch_exists(repo, branch_name: str) -> bool:
+    """检查分支是否存在
+
+    Returns:
+        bool: True if branch exists, False otherwise
+
+    Raises:
+        Exception: 其他异常（权限不足、API错误、网络错误等）会继续抛出
+    """
+    try:
+        repo.get_branch(branch_name)
+        return True
+    except UnknownObjectException:
+        # 分支不存在（404）
+        return False
+    # 其他异常（403、API错误、网络错误等）继续抛出
+
+
+def create_branch(repo, branch_name: str, base_branch: str) -> bool:
+    """创建新分支
+
+    Args:
+        repo: Github repository object
+        branch_name: 新分支名称
+        base_branch: 基础分支名称
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # 获取基础分支的最新 commit SHA
+        base_branch_ref = repo.get_branch(base_branch)
+        commit_sha = base_branch_ref.commit.sha
+
+        # 创建新分支引用
+        repo.create_git_ref(
+            ref=f"refs/heads/{branch_name}",
+            sha=commit_sha
+        )
+        return True
+    except Exception as e:
+        print(f"  ❌ 创建分支失败: {e}")
+        raise
+
+
+def build_step3_reply_message(issue_number: int, branch_name: str, base_branch: str, status: str, error_msg: str = None) -> str:
+    """构建 Step 3 回复消息
+
+    Args:
+        issue_number: Issue 编号
+        branch_name: 分支名称
+        base_branch: 基础分支名称
+        status: 状态 ('created', 'already_exists', 'failed')
+        error_msg: 错误信息（仅 status='failed' 时使用）
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    if status == 'created':
+        return f"""## 🤖 Stage 3 工作分支创建
+
+**状态**: ✅ 分支已创建
+
+**Issue 编号**: #{issue_number}
+
+**分支名称**: `{branch_name}`
+
+**基于**: `{base_branch}` 分支
+
+---
+
+**⚠️ 当前未执行代码修改**
+
+---
+🤖 Zhipu AI Stage 3 | {repo_name}
+"""
+
+    elif status == 'already_exists':
+        return f"""## 🤖 Stage 3 工作分支检查
+
+**状态**: ℹ️ 工作分支已存在
+
+**Issue 编号**: #{issue_number}
+
+**分支名称**: `{branch_name}`
+
+**说明**: 将复用现有分支，无需重复创建
+
+---
+
+**⚠️ 当前未执行代码修改**
+
+---
+🤖 Zhipu AI Stage 3 | {repo_name}
+"""
+
+    else:  # status == 'failed'
+        return f"""## 🤖 Stage 3 工作分支创建
+
+**状态**: ❌ 分支创建失败
+
+**失败原因**: {error_msg or "未知错误"}
+
+---
+
+**ℹ️ Step 1 和 Step 2 已成功完成**
+
+---
+🤖 Zhipu AI Stage 3 | {repo_name}
+"""
+
+
+def execute_step3(g, repo, issue, issue_number: int):
+    """执行 Step 3 创建工作分支"""
+    print("🔍 准备创建工作分支...")
+
+    # 1. 获取默认分支
+    print("📌 获取仓库默认分支...")
+    try:
+        base_branch = get_default_branch(repo)
+        print(f"  ✅ 默认分支: {base_branch}")
+    except Exception as e:
+        print(f"  ❌ 获取默认分支失败")
+        raise
+
+    # 2. 生成分支名称
+    print("🏷️  生成分支名称...")
+    branch_name = generate_branch_name(issue_number)
+    print(f"  ✅ 分支名称: {branch_name}")
+
+    # 3. 检查分支是否已存在
+    print("🔍 检查分支是否已存在...")
+    if branch_exists(repo, branch_name):
+        print("  ℹ️ 分支已存在，跳过创建")
+        status = 'already_exists'
+
+        # 生成回复
+        reply_message = build_step3_reply_message(
+            issue_number=issue_number,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            status=status
+        )
+    else:
+        print("  ℹ️ 分支不存在，准备创建...")
+        status = 'created'
+
+        try:
+            # 创建分支
+            create_branch(repo, branch_name, base_branch)
+            print("  ✅ 分支创建成功")
+        except Exception as e:
+            print(f"  ❌ 分支创建失败")
+            status = 'failed'
+            raise
+
+        # 生成回复
+        reply_message = build_step3_reply_message(
+            issue_number=issue_number,
+            branch_name=branch_name,
+            base_branch=base_branch,
+            status=status
+        )
+
+    # 4. 回复到 Issue
+    print("💬 回复消息到 Issue...")
+    try:
+        issue.create_comment(reply_message)
+        print("  ✅ 成功回复到 Issue")
+    except Exception as e:
+        print(f"  ❌ 回复失败: {e}")
+        raise
+
+    print(f"  ✅ Step 3 完成，状态: {status}")
 
 
 if __name__ == "__main__":

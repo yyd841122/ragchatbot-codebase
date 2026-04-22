@@ -186,6 +186,12 @@ def main() -> None:
     print("🔜 进入 Stage 2 - Step 3: 创建工作分支")
     print("="*60)
     print()
+
+    # 生成工作分支名称（供 Step 6 使用）
+    branch_name = generate_branch_name(issue_number)
+    print(f"  📌 工作分支名称: {branch_name}")
+    print()
+
     step3_success = False
     try:
         execute_step3(g, repo, issue, issue_number)

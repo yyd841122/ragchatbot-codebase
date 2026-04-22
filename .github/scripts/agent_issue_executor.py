@@ -819,19 +819,24 @@ def extract_first_file_path(existing_plan: str) -> str:
             if cleaned_line.startswith('- '):
                 cleaned_line = cleaned_line[2:].strip()
 
-            # 提取反引号内的内容
+            # 去掉包裹的反引号
             if '`' in cleaned_line:
                 # 提取第一个反引号对内的内容
                 start = cleaned_line.find('`')
                 end = cleaned_line.find('`', start + 1)
                 if start != -1 and end != -1:
-                    file_path = cleaned_line[start + 1:end].strip()
-                    if file_path:
-                        return file_path
+                    cleaned_line = cleaned_line[start + 1:end].strip()
 
-            # 如果没有反引号，直接使用整行（过滤掉明显不是文件路径的内容）
-            elif cleaned_line and not cleaned_line.startswith('*') and not cleaned_line.startswith('#'):
-                # 简单的启发式检查：看起来像文件路径（包含斜杠或.py等）
+            # 检查是否存在 " - [" 分隔符（路径 + 说明格式）
+            if ' - [' in cleaned_line:
+                cleaned_line = cleaned_line.split(' - [', 1)[0].strip()
+
+            # 最终再 strip 一次确保干净
+            cleaned_line = cleaned_line.strip()
+
+            # 如果提取到有效内容，返回
+            if cleaned_line and not cleaned_line.startswith('*') and not cleaned_line.startswith('#'):
+                # 简单的启发式检查：看起来像文件路径（包含斜杠或点）
                 if '/' in cleaned_line or '.' in cleaned_line:
                     return cleaned_line
 

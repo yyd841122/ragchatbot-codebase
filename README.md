@@ -4,13 +4,13 @@ A Retrieval-Augmented Generation (RAG) system designed to answer questions about
 
 ## Overview
 
-This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Anthropic's Claude for AI generation, and provides a web interface for interaction.
+This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Zhipu AI (GLM-4-Flash) for AI generation, and provides a web interface for interaction.
 
 ## Prerequisites
 
 - Python 3.13 or higher
 - uv (Python package manager)
-- An Anthropic API key (for Claude AI)
+- A Zhipu AI API key (for GLM-4-Flash model)
 - **For Windows**: Use Git Bash to run the application commands - [Download Git for Windows](https://git-scm.com/downloads/win)
 
 ## Installation
@@ -29,7 +29,7 @@ This application is a full-stack web application that enables users to query cou
    
    Create a `.env` file in the root directory:
    ```bash
-   ANTHROPIC_API_KEY=your_anthropic_api_key_here
+   ZHIPU_API_KEY=your_zhipu_api_key_here
    ```
 
 ## Running the Application
@@ -102,28 +102,3 @@ pre-commit install
 
 # Now hooks will run automatically on each commit
 ```
-
-## 🤖 Zhipu Fix Plan
-
-### 问题理解
-测试 Stage 6 的功能，确保 Step 1 正常，Step 5 成功修改 README.md 并创建 commit，Step 6 成功创建 Draft PR，并在 Issue 和 Pull Requests 页面显示成功信息。
-
-### 计划修改文件
-- README.md - [修改 README.md 文件内容，以便验证 Step 5 和 Step 6]
-
-### Todo List
-- [ ] [第一步] - 运行测试 Stage 6，确保 Step 1 正常
-- [ ] [第二步] - 检查 README.md 文件内容，确认 Step 5 修改成功
-- [ ] [第三步] - 检查 Git 提交历史，确认 Step 5 创建了 commit
-- [ ] [第四步] - 检查 GitHub 上的 Draft PR 页面，确认 Step 6 创建了 Draft PR
-- [ ] [第五步] - 在 Issue 中回复 Stage 6 成功信息
-
-### 风险提示
-- [可能的风险点1] - Stage 6 功能存在bug，导致测试失败
-- [可能的风险点2] - README.md 文件修改未正确反映在 commit 和 Draft PR 中
-
-### 下一步
-💡 评论 `/zhipu-apply` 可进入执行阶段（第二阶段功能，敬请期待）
-
----
-🤖 本回复由 Zhipu AI 生成 - yyd841122/ragchatbot-codebase

@@ -16,11 +16,13 @@ Stage 2 - Step 1 功能：
 - Step 3: 创建分支
 - Step 4: 文件修改与 Git 操作
 - Step 5: 创建 Draft PR
+- Step 6: Draft PR 创建
 """
 
 import os
 import sys
 import base64
+import time
 
 # 添加 scripts 目录到 Python 路径，以便导入第一阶段的模块
 sys.path.insert(0, '.github/scripts')
@@ -92,6 +94,9 @@ Stage 2 将逐步实现以下功能：
 def main() -> None:
     """主函数"""
     print_stage2_banner()
+
+    # 初始化 Steps 1-5 整体状态
+    all_steps_success = True
 
     print("📍 开始执行 Stage 2 - Step 1 预备流程...\n")
 
@@ -169,6 +174,7 @@ def main() -> None:
     except Exception as e:
         print(f"  ❌ Step 2 执行失败: {e}", file=sys.stderr)
         print(f"  ℹ️ Step 1 已成功完成，仅 Step 2 失败")
+        all_steps_success = False
         print()
         print("="*60)
         print("⚠️ Stage 2 - Step 2 失败，但整体流程继续")
@@ -191,6 +197,7 @@ def main() -> None:
     except Exception as e:
         print(f"  ❌ Step 3 执行失败: {e}", file=sys.stderr)
         print(f"  ℹ️ Step 1 和 Step 2 已成功完成，仅 Step 3 失败")
+        all_steps_success = False
         print()
         print("="*60)
         print("⚠️ Stage 2 - Step 3 失败，但整体流程继续")
@@ -213,6 +220,7 @@ def main() -> None:
     except Exception as e:
         print(f"  ❌ Step 4 执行失败: {e}", file=sys.stderr)
         print(f"  ℹ️ Step 1/2/3 已成功完成，仅 Step 4 失败")
+        all_steps_success = False
         print()
         print("="*60)
         print("⚠️ Stage 2 - Step 4 失败，但整体流程继续")
@@ -225,6 +233,7 @@ def main() -> None:
     print("="*60)
     print()
     step5_success = False
+    step5_result = None
     try:
         if step4_success:  # 仅在 Step 4 成功后执行
             step5_result = execute_step5(g, repo, issue, issue_number)
@@ -237,11 +246,13 @@ def main() -> None:
                 print("✅ Stage 2 - Step 5 完成!")
                 print("="*60)
             elif step5_result['status'] == 'skipped':
+                all_steps_success = False
                 print()
                 print("="*60)
                 print(f"⚠️ Stage 2 - Step 5 跳过: {step5_result['reason']}")
                 print("="*60)
             else:  # failed
+                all_steps_success = False
                 print()
                 print("="*60)
                 print(f"❌ Stage 2 - Step 5 失败: {step5_result['reason']}")
@@ -255,9 +266,70 @@ def main() -> None:
     except Exception as e:
         print(f"  ❌ Step 5 执行失败: {e}", file=sys.stderr)
         print(f"  ℹ️ Step 1/2/3/4 已成功完成，仅 Step 5 失败")
+        all_steps_success = False
         print()
         print("="*60)
         print("⚠️ Stage 2 - Step 5 失败，但整体流程继续")
+        print("="*60)
+    print()
+
+    # 执行 Step 6: 创建 Draft PR
+    print("="*60)
+    print("🔜 进入 Stage 2 - Step 6: 创建 Draft PR")
+    print("="*60)
+    print()
+    step6_success = False
+    step6_start_time = time.time()
+
+    try:
+        # 仅在 Step 5 成功时执行 Step 6
+        if step5_success:
+            # 获取 Stage 1 计划（复用 Step 2 的逻辑）
+            stage1_plan_for_step6 = get_existing_plan(issue)
+
+            step6_result = execute_step6(
+                g=g,
+                repo=repo,
+                issue=issue,
+                issue_number=issue_number,
+                branch_name=branch_name,
+                stage1_plan=stage1_plan_for_step6,
+                step5_result=step5_result
+            )
+
+            step6_duration = time.time() - step6_start_time
+
+            if step6_result['status'] == 'success':
+                step6_success = True
+                print()
+                print("="*60)
+                print("✅ Stage 2 - Step 6 完成!")
+                print("="*60)
+            elif step6_result['status'] == 'skipped':
+                print()
+                print("="*60)
+                print(f"⚠️ Stage 2 - Step 6 跳过: {step6_result['reason']}")
+                print("="*60)
+            else:  # failed
+                print()
+                print("="*60)
+                print(f"❌ Stage 2 - Step 6 失败: {step6_result['reason']}")
+                print("="*60)
+        else:
+            print("  ℹ️ Step 5 未成功，跳过 Step 6")
+            print()
+            print("="*60)
+            print("⏭️ Stage 2 - Step 6 跳过")
+            print("="*60)
+            step6_duration = time.time() - step6_start_time
+
+    except Exception as e:
+        step6_duration = time.time() - step6_start_time
+        print(f"  ❌ Step 6 执行失败: {e}", file=sys.stderr)
+        print(f"  ℹ️ Step 1/2/3/4/5 已成功完成，仅 Step 6 失败")
+        print()
+        print("="*60)
+        print("⚠️ Stage 2 - Step 6 失败，但整体流程继续")
         print("="*60)
     print()
 
@@ -284,6 +356,20 @@ def main() -> None:
         print("  ✅ 回复修改结果（Step 5）")
     else:
         print("  ⚠️ Step 5 未执行或失败")
+    if step6_success:
+        print("  ✅ 创建 Draft PR（Step 6）")
+        print("  ✅ 回复 PR 创建结果（Step 6）")
+    elif step5_success:
+        print("  ⚠️ Step 6 未执行或失败")
+    print()
+
+    # 最终状态总结
+    print("="*60)
+    print("📊 最终状态总结")
+    print("="*60)
+    print(f"Steps 1-5 整体状态: {'✅ 全部成功' if all_steps_success else '⚠️ 存在失败步骤'}")
+    print(f"Step 6 状态: {'✅ 成功' if step6_success else '⚠️ 未成功/未执行'}")
+    print("="*60)
     print()
     print("🔜 后续步骤将在下一阶段实现")
     print()
@@ -1062,7 +1148,7 @@ def generate_modified_content(
 
 要求：
 1. 只返回修改后的完整文档内容
-2. 不要包含解释、不要包含 markdown 代码块标记（\`\`\`）
+2. 不要包含解释、不要包含 markdown 代码块标记（\\`\\`\\`）
 3. 直接返回可用的文档内容
 4. 保持文档的可读性和结构
 """
@@ -1486,6 +1572,479 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         'reason': None,
         'file_path': file_path,
         'commit_sha': commit_sha
+    }
+
+
+# ==================== Stage 6: Draft PR 创建 ====================
+
+def check_branch_divergence(repo, base_branch: str, head_branch: str) -> dict:
+    """检查工作分支相对默认分支的差异
+
+    Args:
+        repo: Github repository object
+        base_branch: 目标分支（默认分支）
+        head_branch: 源分支（工作分支）
+
+    Returns:
+        dict: {
+            'success': bool,
+            'ahead_by': int,  # 工作分支领先默认分支的 commit 数
+            'error': str  # 错误信息（仅失败时）
+        }
+    """
+    try:
+        print(f"  🔍 比较分支差异: {head_branch} -> {base_branch}")
+        comparison = repo.compare(base_branch, head_branch)
+
+        ahead_by = comparison.ahead_by
+        print(f"  ✅ 工作分支领先 {ahead_by} 个 commit")
+
+        return {
+            'success': True,
+            'ahead_by': ahead_by,
+            'error': None
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"  ❌ 比较分支差异失败: {error_msg}")
+        return {
+            'success': False,
+            'ahead_by': 0,
+            'error': error_msg
+        }
+
+
+def check_existing_pr(repo, branch_name: str) -> dict:
+    """检查工作分支是否已存在 open 或 draft PR
+
+    Args:
+        repo: Github repository object
+        branch_name: 工作分支名称
+
+    Returns:
+        dict: {
+            'success': bool,  # 是否成功检查
+            'has_existing_pr': bool,  # 是否存在 PR
+            'existing_pr': object | None,  # PR 对象（如果存在）
+            'error': str  # 错误信息（仅失败时）
+        }
+
+    Raises:
+        Exception: 仅在明确确认"没有 open PR"时返回 success=True，否则抛出异常
+    """
+    try:
+        print(f"  🔍 检查是否已存在 open/draft PR（分支: {branch_name}）")
+
+        # 构建完整的 head 引用格式：owner:branch
+        head_ref = f"{repo.owner.login}:{branch_name}"
+        print(f"  📌 查询条件: state='open', head='{head_ref}'")
+
+        # 查询所有 open 状态的 PR（包括 draft 和普通 open PR）
+        open_prs = repo.get_pulls(state='open', head=head_ref)
+
+        # 获取结果数量
+        pr_count = open_prs.totalCount
+        print(f"  ✅ 找到 {pr_count} 个 open PR")
+
+        # 如果存在任何 open PR，返回第一个
+        if pr_count > 0:
+            pr = open_prs[0]  # 获取第一个 PR
+            draft_status = "Draft" if pr.draft else "普通 Open"
+            print(f"  ℹ️ 已存在 PR: #{pr.number} ({draft_status})")
+            return {
+                'success': True,
+                'has_existing_pr': True,
+                'existing_pr': pr,
+                'error': None
+            }
+
+        # 如果没有任何 open PR，明确确认"没有 open PR"
+        print(f"  ✅ 确认没有 open PR")
+        return {
+            'success': True,
+            'has_existing_pr': False,
+            'existing_pr': None,
+            'error': None
+        }
+
+    except Exception as e:
+        # 其他异常（API 错误、权限错误、网络错误等）继续抛出
+        error_msg = str(e)
+        print(f"  ❌ 检查已存在 PR 时发生异常: {error_msg}")
+        # 不返回 success=False，而是直接抛出异常，让调用方处理
+        raise
+
+
+def create_draft_pr(
+    repo,
+    issue,
+    branch_name: str,
+    base_branch: str,
+    stage1_plan: str,
+    step5_commit_sha: str
+) -> dict:
+    """创建 Draft PR
+
+    Args:
+        repo: Github repository object
+        issue: Github issue object
+        branch_name: 工作分支名称
+        base_branch: 默认分支名称
+        stage1_plan: Stage 1 计划内容
+        step5_commit_sha: Step 5 的 commit SHA（可能为 None）
+
+    Returns:
+        dict: {
+            'success': bool,
+            'pr': object | None,  # PR 对象（成功时）
+            'error': str  # 错误信息（失败时）
+        }
+    """
+    try:
+        print("  🔨 准备创建 Draft PR...")
+
+        # 生成 PR 标题
+        issue_title = issue.title or "无标题"
+        pr_title = f"[Zhipu AI] Issue #{issue.number}: {issue_title}"
+
+        # 截断过长的标题
+        if len(pr_title) > 80:
+            # 保留 "[Zhipu AI] Issue #XX: " 和前 60 个字符
+            prefix = f"[Zhipu AI] Issue #{issue.number}: "
+            title_part = issue_title[:60] + "..."
+            pr_title = prefix + title_part
+
+        print(f"  📌 PR 标题: {pr_title}")
+
+        # 生成 PR body（最小必要信息）
+        commit_info = step5_commit_sha if step5_commit_sha else "无"
+        pr_body = f"""## 🤖 Zhipu AI 自动生成的 Draft PR
+
+### 关联信息
+- **Issue**: #{issue.number} - {issue_title}
+- **源分支**: `{branch_name}`
+- **目标分支**: `{base_branch}`
+- **Step 5 Commit**: {commit_info}
+
+### 说明
+⚠️ 此 PR 由 AI 自动生成，待人工 review 改动内容后，再决定是否标记为 Ready for review。
+
+---
+🤖 Zhipu AI Agent
+"""
+
+        # 创建 Draft PR
+        print(f"  🔨 调用 GitHub API 创建 Draft PR...")
+        pr = repo.create_pull(
+            title=pr_title,
+            body=pr_body,
+            head=branch_name,
+            base=base_branch,
+            draft=True,
+            maintainer_can_modify=True
+        )
+
+        print(f"  ✅ Draft PR 创建成功: #{pr.number}")
+        return {
+            'success': True,
+            'pr': pr,
+            'error': None
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        print(f"  ❌ 创建 Draft PR 失败: {error_msg}")
+        return {
+            'success': False,
+            'pr': None,
+            'error': error_msg
+        }
+
+
+def build_step6_success_message(
+    pr_title: str,
+    pr_html_url: str,
+    head_branch: str,
+    base_branch: str
+) -> str:
+    """构建 Step 6 Draft PR 创建成功时的回复消息
+
+    Args:
+        pr_title: PR 标题
+        pr_html_url: PR HTML URL
+        head_branch: 源分支
+        base_branch: 目标分支
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## ✅ Step 6: Draft PR 创建成功
+
+已成功创建 Draft Pull Request：
+
+- **PR 标题**: {pr_title}
+- **PR 链接**: {pr_html_url}
+- **源分支**: `{head_branch}`
+- **目标分支**: `{base_branch}`
+- **PR 状态**: Draft（待 review）
+
+### 📌 重要提示
+⚠️ **当前 PR 尚未 merge**，请人工 review 改动内容后再决定是否 merge。
+
+---
+🤖 由 Zhipu AI Agent 自动生成 - {repo_name}
+"""
+
+
+def build_step6_existing_pr_message(existing_pr) -> str:
+    """构建 Step 6 已存在 PR 时的回复消息
+
+    Args:
+        existing_pr: 已存在的 PR 对象
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    draft_status = "Draft" if existing_pr.draft else "普通 Open"
+
+    return f"""## ℹ️ Step 6: PR 已存在
+
+工作分支 `{existing_pr.head.ref}` 已存在关联的 Pull Request：
+
+- **PR 标题**: {existing_pr.title}
+- **PR 链接**: {existing_pr.html_url}
+- **PR 状态**: {draft_status}
+
+本次未创建新的 PR，请直接使用现有 PR。
+
+---
+🤖 由 Zhipu AI Agent 自动生成 - {repo_name}
+"""
+
+
+def build_step6_no_changes_message(branch_name: str, base_branch: str) -> str:
+    """构建 Step 6 无可提交改动时的回复消息
+
+    Args:
+        branch_name: 工作分支名称
+        base_branch: 默认分支名称
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## ⚠️ Step 6: 无可提交改动
+
+工作分支 `{branch_name}` 相对默认分支 `{base_branch}` **没有可提交的改动**（ahead_by = 0）。
+
+### 📌 可能原因
+- Stage 5 创建的 commit 与默认分支内容完全一致
+- 工作分支已被合并或回滚
+
+---
+🤖 由 Zhipu AI Agent 自动生成 - {repo_name}
+"""
+
+
+def build_step6_failure_message(error_msg: str, failure_reason: str) -> str:
+    """构建 Step 6 Draft PR 创建失败时的回复消息
+
+    Args:
+        error_msg: 错误信息
+        failure_reason: 失败原因说明
+
+    Returns:
+        str: Markdown 格式的回复消息
+    """
+    repo_name = os.getenv('REPO', '')
+
+    return f"""## ❌ Step 6: Draft PR 创建失败
+
+尝试创建 Draft PR 时遇到错误：
+
+**错误信息**: {error_msg}
+
+### 📌 失败原因
+{failure_reason}
+
+---
+🤖 由 Zhipu AI Agent 自动生成 - {repo_name}
+"""
+
+
+def execute_step6(
+    g,
+    repo,
+    issue,
+    issue_number: int,
+    branch_name: str,
+    stage1_plan: str,
+    step5_result: dict
+) -> dict:
+    """执行 Step 6 创建 Draft PR
+
+    Args:
+        g: Github client
+        repo: Github repository object
+        issue: Github issue object
+        issue_number: Issue 编号
+        branch_name: 工作分支名称
+        stage1_plan: Stage 1 计划内容
+        step5_result: Step 5 的返回结果
+
+    Returns:
+        dict: {
+            'status': str,  # 'success', 'skipped', 'failed'
+            'reason': str,  # 原因说明（skipped/failed 时）
+            'pr_url': str,  # PR URL（仅 success 时）
+        }
+    """
+    print("🔍 准备创建 Draft PR...")
+
+    # 1. 获取默认分支
+    print("📌 获取默认分支...")
+    try:
+        base_branch = get_default_branch(repo)
+        print(f"  ✅ 默认分支: {base_branch}")
+    except Exception as e:
+        print(f"  ❌ 获取默认分支失败: {e}")
+        reply_message = build_step6_failure_message(
+            error_msg=str(e),
+            failure_reason="无法获取仓库默认分支"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': '获取默认分支失败',
+            'pr_url': None
+        }
+
+    # 2. 检查分支差异
+    print("🔍 检查工作分支相对默认分支的差异...")
+    divergence = check_branch_divergence(repo, base_branch, branch_name)
+
+    if not divergence['success']:
+        print(f"  ❌ 检查分支差异失败")
+        reply_message = build_step6_failure_message(
+            error_msg=divergence['error'],
+            failure_reason="无法比较分支差异，可能工作分支不存在"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'检查分支差异失败: {divergence["error"]}',
+            'pr_url': None
+        }
+
+    ahead_by = divergence['ahead_by']
+
+    # 3. 判断是否有可提交的改动
+    if ahead_by == 0:
+        print(f"  ℹ️ 工作分支没有领先 commit（ahead_by = 0）")
+        reply_message = build_step6_no_changes_message(branch_name, base_branch)
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复无改动消息")
+        return {
+            'status': 'skipped',
+            'reason': '工作分支相对默认分支没有可提交的改动',
+            'pr_url': None
+        }
+
+    print(f"  ✅ 工作分支领先 {ahead_by} 个 commit，可以创建 PR")
+
+    # 4. 检查是否已存在 PR
+    print("🔍 检查是否已存在 open/draft PR...")
+    try:
+        existing_pr_check = check_existing_pr(repo, branch_name)
+
+        if existing_pr_check['has_existing_pr']:
+            existing_pr = existing_pr_check['existing_pr']
+            print(f"  ℹ️ 已存在 PR: #{existing_pr.number}")
+            reply_message = build_step6_existing_pr_message(existing_pr)
+            issue.create_comment(reply_message)
+            print("  ✅ 已回复已存在 PR 消息")
+            return {
+                'status': 'skipped',
+                'reason': f'已存在 PR #{existing_pr.number}',
+                'pr_url': existing_pr.html_url
+            }
+
+        print(f"  ✅ 确认没有已存在的 PR")
+
+    except Exception as e:
+        print(f"  ❌ 检查已存在 PR 时发生异常: {e}")
+        reply_message = build_step6_failure_message(
+            error_msg=str(e),
+            failure_reason="检查已存在 PR 时发生异常"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'检查已存在 PR 失败: {str(e)}',
+            'pr_url': None
+        }
+
+    # 5. 创建 Draft PR
+    print("🔨 创建 Draft PR...")
+    step5_commit_sha = step5_result.get('commit_sha') if step5_result else None
+    pr_result = create_draft_pr(
+        repo=repo,
+        issue=issue,
+        branch_name=branch_name,
+        base_branch=base_branch,
+        stage1_plan=stage1_plan,
+        step5_commit_sha=step5_commit_sha
+    )
+
+    if not pr_result['success']:
+        print(f"  ❌ 创建 Draft PR 失败")
+        reply_message = build_step6_failure_message(
+            error_msg=pr_result['error'],
+            failure_reason="GitHub API 返回错误，可能权限不足或参数错误"
+        )
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'创建 Draft PR 失败: {pr_result["error"]}',
+            'pr_url': None
+        }
+
+    pr = pr_result['pr']
+    print(f"  ✅ Draft PR 创建成功: #{pr.number}")
+
+    # 6. 生成成功回复
+    print("💬 生成成功回复...")
+    reply_message = build_step6_success_message(
+        pr_title=pr.title,
+        pr_html_url=pr.html_url,
+        head_branch=branch_name,
+        base_branch=base_branch
+    )
+
+    # 7. 回复到 Issue
+    try:
+        issue.create_comment(reply_message)
+        print("  ✅ 成功回复到 Issue")
+    except Exception as e:
+        print(f"  ❌ 回复失败: {e}")
+        raise
+
+    print(f"  ✅ Step 6 完成")
+
+    return {
+        'status': 'success',
+        'reason': None,
+        'pr_url': pr.html_url
     }
 
 

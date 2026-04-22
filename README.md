@@ -6,7 +6,6 @@ A Retrieval-Augmented Generation (RAG) system designed to answer questions about
 
 This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Anthropic's Claude for AI generation, and provides a web interface for interaction.
 
-
 ## Prerequisites
 
 - Python 3.13 or higher
@@ -104,3 +103,29 @@ pre-commit install
 # Now hooks will run automatically on each commit
 ```
 
+## Testing Stage 6
+
+### Test Plan
+
+#### Step 1: Execute Test Operations in Stage 6
+- [ ] Perform the required actions in Stage 6 to trigger the creation of a Draft PR.
+
+#### Step 2: Check for Draft PR Creation
+- [ ] Verify that a Draft PR has been automatically created after executing the test operations.
+
+#### Step 3: Validate Draft PR Content
+- [ ] Ensure that the content of the Draft PR meets the expected criteria.
+
+#### Step 4: Confirm Further Operations on Draft PR
+- [ ] Confirm that the Draft PR can be further manipulated, such as merging.
+
+#### Step 5: Document Test Results and Update README.md
+- [ ] Record the test results and update the README.md with the findings.
+
+### Risk Alerts
+
+- [ ] Risk Point 1: Stage 6 operations do not trigger the creation of a Draft PR.
+- [ ] Risk Point 2: The content of the generated Draft PR does not match expectations.
+
+### Next Steps
+💡 Comment `/zhipu-apply` to proceed to the execution phase (second phase feature, coming soon).

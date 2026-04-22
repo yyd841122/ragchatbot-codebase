@@ -6,7 +6,6 @@ A Retrieval-Augmented Generation (RAG) system designed to answer questions about
 
 This application is a full-stack web application that enables users to query course materials and receive intelligent, context-aware responses. It uses ChromaDB for vector storage, Anthropic's Claude for AI generation, and provides a web interface for interaction.
 
-
 ## Prerequisites
 
 - Python 3.13 or higher
@@ -94,6 +93,7 @@ uv run pytest -v
 ### Pre-commit Hooks (Optional)
 
 Install pre-commit hooks for automatic quality checks:
+
 ```bash
 # Install pre-commit framework
 pip install pre-commit
@@ -104,3 +104,45 @@ pre-commit install
 # Now hooks will run automatically on each commit
 ```
 
+## Testing Stage 6
+
+### Overview
+
+This section outlines the testing plan for Stage 6, which includes generating a structured plan and modifying the README.md file. The goal is to ensure that the system can automatically create a Draft Pull Request (PR) with the structured plan.
+
+### Prerequisites
+
+- Ensure that Stage 6 is properly configured with all necessary environment variables and configuration items.
+- Have a `.env` file with the Anthropic API key set.
+
+### Testing Steps
+
+1. **Generate Structured Plan**
+   - Run the test script to generate a structured plan.
+   - Verify that the plan is correctly formatted and contains all required information.
+
+2. **Modify README.md**
+   - The test script should use the README.md file to record the plan modifications.
+   - Check that the README.md file has been updated with the new plan.
+
+3. **Automated Draft PR Creation**
+   - Verify that the system can automatically create a Draft PR with the structured plan.
+   - Ensure that the PR contains the correct content and is linked to the appropriate repository.
+
+### Results
+
+- [ ] Structured plan generated successfully.
+- [ ] README.md updated with plan modifications.
+- [ ] Draft PR created automatically with the structured plan.
+
+### Known Issues
+
+- [ ] Potential issue with reading/writing to README.md.
+- [ ] Possible configuration or permission issues with Draft PR creation.
+
+### Next Steps
+
+- Continue testing and refining the Stage 6 functionality.
+- Address any known issues and ensure the system meets all requirements.
+
+For more information, refer to the [Stage 6 documentation](docs/STAGE_6.md).

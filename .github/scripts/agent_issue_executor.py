@@ -972,6 +972,28 @@ def build_step4_failure_message(file_path: str, error_msg: str) -> str:
 
 ---
 
+### ⚠️ 当前 MVP 限制
+
+- **仅支持修改根目录的 `README.md`**
+- **不支持相对路径**（如 `path/to/README.md`、`docs/README.md`）
+- **不支持其他文件类型**（如 `.py`、`.yml`、`.json`）
+
+### 💡 可能的原因
+
+1. Stage 1 计划中的文件路径不正确
+2. Stage 1 计划包含占位路径
+3. Stage 1 文件校验未生效（bug）
+
+### 🔧 解决方法
+
+请在 Issue 中重新评论 `@zhipu`，确保：
+- 第一个文件是 `README.md`
+- 不使用占位路径或相对路径
+
+如持续失败，请联系开发者检查 Stage 1 文件校验逻辑。
+
+---
+
 **ℹ️ Step 1/2/3 已成功完成**
 
 ---

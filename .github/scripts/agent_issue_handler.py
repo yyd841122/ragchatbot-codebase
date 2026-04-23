@@ -91,9 +91,7 @@ def build_context_prompt(
 [简洁总结这个 Issue 要解决的问题]
 
 ### 计划修改文件
-- `path/to/file1` - [修改目的]
-- `path/to/file2` - [修改目的]
-- ...
+- `README.md` - [修改目的]
 
 ### Todo List
 - [ ] [第一步] - [预期结果]
@@ -119,6 +117,9 @@ Todo List 要具体、可执行、可验证
 每个步骤应该是独立的、可以单独验证的
 优先给出"最小可行方案"，避免过度设计
 文件路径要基于项目根目录，使用相对路径
+**第一个文件必须是仓库根目录的真实文件 README.md**
+**禁止使用占位路径（如 path/to/README.md、docs/README.md）**
+**当前版本仅支持 README.md，不要计划修改其他类型文件**
 用简洁的中文描述
 如果信息不足，请明确写"信息不足"，不要编造不存在的实现细节
 
@@ -162,6 +163,98 @@ def normalize_plan_response(ai_response: str) -> str:
     if "## 🤖 Zhipu Fix Plan" not in ai_response:
         return f"## 🤖 Zhipu Fix Plan\n\n{ai_response}"
     return ai_response
+
+
+def extract_first_file_path(plan: str) -> str:
+    """从 Stage 1 计划中提取第一个文件路径
+
+    Args:
+        plan: Stage 1 计划的完整内容
+
+    Returns:
+        str: 第一个文件路径，如果未找到则返回空字符串
+    """
+    if not plan:
+        return ""
+
+    # 查找"计划修改文件"章节
+    lines = plan.split('\n')
+    in_target_section = False
+
+    for line in lines:
+        # 检测是否进入目标章节
+        if "### 计划修改文件" in line:
+            in_target_section = True
+            continue
+
+        # 如果进入目标章节，开始提取文件路径
+        if in_target_section:
+            # 跳过空行
+            if not line.strip():
+                continue
+
+            # 遇到下一个章节标题，停止查找
+            if line.strip().startswith('###'):
+                break
+
+            # 尝试提取文件路径（支持多种格式）
+            # 格式1: Markdown 列表: - `README.md`
+            # 格式2: 仅反引号: `README.md`
+            # 格式3: 普通文本: README.md
+
+            # 去除 Markdown 列表符号
+            cleaned_line = line.strip()
+            if cleaned_line.startswith('- '):
+                cleaned_line = cleaned_line[2:].strip()
+
+            # 去掉包裹的反引号
+            if '`' in cleaned_line:
+                # 提取第一个反引号对内的内容
+                start = cleaned_line.find('`')
+                end = cleaned_line.find('`', start + 1)
+                if start != -1 and end != -1:
+                    cleaned_line = cleaned_line[start + 1:end].strip()
+
+            # 检查是否存在 " - [" 分隔符（路径 + 说明格式）
+            if ' - [' in cleaned_line:
+                cleaned_line = cleaned_line.split(' - [', 1)[0].strip()
+
+            # 最终再 strip 一次确保干净
+            cleaned_line = cleaned_line.strip()
+
+            # 如果提取到有效内容，返回
+            if cleaned_line and not cleaned_line.startswith('*') and not cleaned_line.startswith('#'):
+                return cleaned_line
+
+    return ""
+
+
+def validate_first_file_exists(plan: str, repo) -> tuple[bool, str]:
+    """验证计划中的第一个文件是否真实存在
+
+    Args:
+        plan: AI 生成的计划
+        repo: Github repository 对象
+
+    Returns:
+        tuple[bool, str]: (是否通过, 错误信息)
+    """
+    # 提取第一个文件路径
+    first_file = extract_first_file_path(plan)
+
+    if not first_file:
+        return False, "计划中未找到文件路径，请检查计划格式"
+
+    # 检查是否为 README.md
+    if first_file != "README.md":
+        return False, f"当前版本仅支持 `README.md`，但计划中的第一个文件是 `{first_file}`。请在 Issue 中重新评论 `@zhipu`，并确保第一个文件是 `README.md`。"
+
+    # 验证文件是否存在
+    try:
+        repo.get_contents(first_file)
+        return True, ""
+    except Exception:
+        return False, f"文件 `{first_file}` 在仓库中不存在。请重新在 Issue 中评论 `@zhipu` 生成正确的计划。"
 
 
 def main() -> None:
@@ -213,6 +306,31 @@ def main() -> None:
 
     ai_response = normalize_plan_response(ai_response)
     print("✅ AI 响应生成成功")
+
+    # 验证第一个文件是否存在
+    print("🔍 验证计划中的第一个文件...")
+    is_valid, error_msg = validate_first_file_exists(ai_response, repo)
+    if not is_valid:
+        print(f"❌ 计划验证失败: {error_msg}", file=sys.stderr)
+        # 在 Issue 中回复错误信息
+        issue.create_comment(f"""## ⚠️ Stage 1 计划验证失败
+
+{error_msg}
+
+---
+
+**当前 MVP 限制**：
+- 仅支持修改根目录的 `README.md`
+- 不支持其他文件类型
+
+**请重新操作**：
+1. 在 Issue 中重新评论 `@zhipu`
+2. 确保生成的计划第一个文件是 `README.md`
+
+🤖 由 Zhipu AI Stage 1 验证流程生成 | {os.getenv('REPO', '')}""")
+        sys.exit(1)
+
+    print("✅ 文件验证通过")
 
     try:
         issue.create_comment(ai_response)

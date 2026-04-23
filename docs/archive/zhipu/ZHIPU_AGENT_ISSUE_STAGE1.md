@@ -1,10 +1,19 @@
+> **⚠️ 归档文档**
+> 本文档已归档，内容可能过时。
+> 请优先使用 [Zhipu AI Agent 文档导航](../../ZHIPU_GUIDE.md) 作为当前入口。
+>
+> **归档日期**：2026-04-23
+> **归档原因**：第一阶段详细记录，历史开发文档，已无日常参考价值
+>
+> ---
+
 # ZHIPU_AGENT_ISSUE_STAGE1
 
 ## 1. 目标
 
 实现第一阶段的 Zhipu Issue Agent，让用户在 GitHub Issue 评论中输入 `@zhipu` 后，自动触发 GitHub Actions，读取 Issue 上下文，调用智谱 AI 生成结构化执行计划，并自动评论回当前 Issue。
 
-本阶段只实现“计划型助手”，暂不执行改代码、建分支、提交 commit、创建 PR。
+本阶段只实现"计划型助手"，暂不执行改代码、建分支、提交 commit、创建 PR。
 
 ---
 
@@ -134,11 +143,11 @@ python .github/scripts/test_agent_issue_local.py
 
 ### 问题 1：Python 缩进 / 代码块粘贴错乱
 
-**原因：**
+**原因**：
 
 - 聊天窗口中的 Markdown 代码块与 Python 多行字符串中的反引号嵌套，导致复制后代码显示错乱
 
-**解决：**
+**解决**：
 
 - 使用完整代码块一次性覆盖
 - 去掉 prompt 中嵌套的 Markdown 代码围栏
@@ -147,17 +156,17 @@ python .github/scripts/test_agent_issue_local.py
 
 ### 问题 2：本地测试脚本导入路径错误
 
-**报错：**
+**报错**：
 
 ```
 ModuleNotFoundError: No module named 'github.scripts'
 ```
 
-**原因：**
+**原因**：
 
 - 把本地 `.github/scripts` 误当成 Python 包路径导入
 
-**解决：**
+**解决**：
 
 ```
 from agent_issue_handler import main as agent_main
@@ -167,13 +176,13 @@ from agent_issue_handler import main as agent_main
 
 ### 问题 3：本地测试缺少 `GITHUB_TOKEN`
 
-**报错：**
+**报错**：
 
 ```
 环境变量 GITHUB_TOKEN 未设置
 ```
 
-**解决：**
+**解决**：
 
 在 PowerShell 中手动设置：
 
@@ -185,11 +194,11 @@ $env:GITHUB_TOKEN="你的真实GitHubToken"
 
 ### 问题 4：GitHub API 401 Bad credentials
 
-**原因：**
+**原因**：
 
 - 使用了假的 token 或无效 token
 
-**解决：**
+**解决**：
 
 - 创建并使用真实可用的 GitHub Personal Access Token
 
@@ -197,11 +206,11 @@ $env:GITHUB_TOKEN="你的真实GitHubToken"
 
 ### 问题 5：GitHub API 404 Not Found
 
-**原因：**
+**原因**：
 
 - 测试输入的仓库名错误
 
-**解决：**
+**解决**：
 
 改为真实仓库名：
 
@@ -213,11 +222,11 @@ yyd841122/ragchatbot-codebase
 
 ### 问题 6：GitHub API 403 Resource not accessible by personal access token
 
-**原因：**
+**原因**：
 
 - token 权限不足，无法写 Issue 评论
 
-**解决：**
+**解决**：
 
 - 使用新的 classic token
 - 确保具备 `repo` 权限
@@ -259,7 +268,7 @@ yyd841122/ragchatbot-codebase
 - 自动提交 commit
 - 自动创建 Draft PR
 
-也就是从“计划型助手”升级为“执行型代理”。
+也就是从"计划型助手"升级为"执行型代理"。
 
 ---
 

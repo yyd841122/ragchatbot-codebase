@@ -90,7 +90,6 @@
 当前项目存在多个 Zhipu 相关文档，内容有重叠，新用户不知道从哪里开始：
 
 - `ZHIPU_AGENT_USAGE.md`
-- `ZHIPU_AGENT_QUICKSTART.md`
 - `AUTOMATION_README.md`
 - `PR_REVIEW_CHECKLIST.md`
 - `STAGE6_MERGE_CHECKLIST.md`
@@ -107,7 +106,7 @@
 - **内容结构**：
   ```markdown
   ## 首次使用？
-  → 快速开始：ZHIPU_AGENT_QUICKSTART.md
+  → 快速开始：ZHIPU_GUIDE.md
 
   ## 日常使用？
   → 使用指南：ZHIPU_AGENT_USAGE.md

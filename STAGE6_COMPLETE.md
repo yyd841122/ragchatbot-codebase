@@ -110,13 +110,10 @@
 
 ### 现有文档（Stage 1-5）
 
-3. **`ZHIPU_AGENT_USAGE.md`**
+1. **`ZHIPU_AGENT_USAGE.md`**
    - 完整使用指南（Stage 1-6）
 
-4. **`ZHIPU_AGENT_QUICKSTART.md`**
-   - 快速启动指南
-
-5. **`AUTOMATION_README.md`**
+2. **`AUTOMATION_README.md`**
    - 智谱 AI 自动化系统说明
 
 ---

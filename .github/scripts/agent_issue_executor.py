@@ -1469,17 +1469,28 @@ def validate_modification_quality(old_content: str, new_content: str) -> dict:
 
     # 提取原文件中的关键标题（# 和 ##）
     key_headings = []
+    in_code_block = False  # 跟踪是否在 fenced code block 中（仅处理 triple backticks）
+
     for line in old_lines:
         line_stripped = line.strip()
-        # 检查一级标题（#）和二级标题（##）
-        if line_stripped.startswith('#') and not line_stripped.startswith('###'):
-            # 提取标题文本（去掉 # 符号）
-            heading = line_stripped.lstrip('#').strip()
-            if heading and len(heading) < 50:  # 只保留长度合理的标题
-                key_headings.append({
-                    'level': '#' if line_stripped.startswith('# ') else '##',
-                    'text': heading
-                })
+
+        # 检测 fenced code block 的开始/结束（```）
+        if line_stripped.startswith('```'):
+            in_code_block = not in_code_block
+            continue
+
+        # 只在代码块外部提取标题
+        if not in_code_block:
+            # 只接受真正的 Markdown 标题格式：# 或 ##（后面必须有空格）
+            # 继续不保护 ### 及更深层级标题
+            if line_stripped.startswith('# ') or line_stripped.startswith('## '):
+                # 提取标题文本（去掉 # 符号）
+                heading = line_stripped.lstrip('#').strip()
+                if heading and len(heading) < 50:  # 只保留长度合理的标题
+                    key_headings.append({
+                        'level': '#' if line_stripped.startswith('# ') else '##',
+                        'text': heading
+                    })
 
     # 检查新文件是否保留了这些关键标题
     if key_headings:

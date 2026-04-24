@@ -41,6 +41,107 @@ def get_env_var(var_name: str) -> str:
     return value
 
 
+def is_safe_path(file_path: str) -> bool:
+    """检查路径是否安全
+
+    规则：
+    - 空路径返回 False
+    - 绝对路径（以 / 开头）返回 False
+    - 禁止 '../' 相对路径跳转
+    - 路径按 '/' 分隔后最多 2 段
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        路径是否安全
+    """
+    # 空路径检查
+    if not file_path or not file_path.strip():
+        return False
+
+    # 绝对路径检查（以 / 开头）
+    if file_path.startswith('/'):
+        return False
+
+    # 禁止相对路径跳转
+    if '../' in file_path:
+        return False
+
+    # 统一路径分隔符
+    normalized = file_path.replace('\\', '/')
+
+    # 检查深度（按 / 分隔后最多 2 段）
+    parts = normalized.split('/')
+    return len(parts) <= 2
+
+
+def is_supported_markdown_file(file_path: str) -> bool:
+    """检查是否为支持的 Markdown 文件
+
+    规则：
+    - 必须以 .md 结尾
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 Markdown 文件
+    """
+    # 必须以 .md 结尾
+    if not file_path.lower().endswith('.md'):
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
+def verify_file_exists(repo, file_path: str) -> bool:
+    """验证文件是否存在
+
+    Args:
+        repo: Github 仓库对象
+        file_path: 文件路径
+
+    Returns:
+        文件是否存在
+    """
+    try:
+        repo.get_contents(file_path)
+        return True
+    except UnknownObjectException:
+        return False
+
+
+def build_step5_file_not_found_message(file_path: str) -> str:
+    """构建文件不存在的错误消息
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        格式化的错误消息
+    """
+    return f"""## 🤖 Zhipu Stage 2 - Step 5 执行结果
+
+**状态**: ❌ 文件不存在
+
+**目标文件**: `{file_path}`
+
+**原因**: 在仓库中未找到该文件
+
+**如何修复**：
+1. 检查文件路径是否正确
+2. 确认文件已在仓库中存在
+3. 在 Issue 中重新评论 `@zhipu`，生成修正后的计划
+
+---
+
+🤖 由 Zhipu AI Stage 2 - Step 5 生成
+"""
+
+
 def print_stage2_banner():
     """打印 Stage 2 标识"""
     print("\n" + "="*60)
@@ -1358,11 +1459,23 @@ def build_step5_unsupported_file_message(file_path: str) -> str:
 
 **目标文件**: `{file_path}`
 
-**原因**: Stage 5 当前 MVP 版本仅支持修改 `README.md` 文件
+**原因**: 文件不在当前支持范围内
 
-**说明**：
-- 其他 `.md` / `.txt` 文件后续版本将支持
-- 代码文件（.py, .js 等）后续版本将支持
+**当前支持的文件类型**：
+- ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
+- ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
+- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`、`requirements.txt`）
+
+**路径规则**：
+- 路径按 `/` 分隔后最多 2 段
+- 禁止相对路径跳转（如 `../file.md`）
+- 禁止绝对路径（如 `/etc/file.md`）
+
+**如何修复**：
+1. 检查文件路径是否符合上述规则
+2. 在 Issue 中重新评论 `@zhipu`，生成修正后的计划
+3. 确保 `### 计划修改文件` 章节中的第一个文件符合规则
 
 ---
 
@@ -1469,25 +1582,39 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     print(f"  ✅ 文件路径: {file_path}")
 
-    # 4. 检查文件扩展名（仅支持 README.md）
-    print("🔍 检查文件类型...")
-    basename = os.path.basename(file_path).lower()
-
-    if basename != "readme.md":
-        print(f"  ℹ️ 文件 {basename} 不在支持范围内（仅支持 README.md）")
+    # 4. 检查文件类型和路径安全（先检查类型和路径）
+    print("🔍 检查文件类型和路径安全...")
+    if not is_supported_markdown_file(file_path):
+        print(f"  ℹ️ 文件 {file_path} 不在支持范围内")
         reply_message = build_step5_unsupported_file_message(file_path)
         issue.create_comment(reply_message)
         print("  ✅ 已回复跳过消息")
         return {
             'status': 'skipped',
-            'reason': f'文件 {basename} 不在支持范围内（仅支持 README.md）',
+            'reason': f'文件 {file_path} 不在支持范围内（仅支持根目录和一级子目录的 .md 文件）',
             'file_path': file_path,
             'commit_sha': None
         }
 
-    print(f"  ✅ 文件类型支持: {basename}")
+    print(f"  ✅ 文件类型和路径安全检查通过")
 
-    # 5. 读取文件当前内容（复用 Step 4 的逻辑）
+    # 5. 验证文件是否存在（再检查存在性）
+    print("🔍 验证文件是否存在...")
+    if not verify_file_exists(repo, file_path):
+        print(f"  ❌ 文件 {file_path} 不存在")
+        reply_message = build_step5_file_not_found_message(file_path)
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'文件 {file_path} 不存在',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print(f"  ✅ 文件存在")
+
+    # 6. 读取文件当前内容（复用 Step 4 的逻辑）
     print(f"📖 读取文件当前内容（分支: {branch_name}）...")
     read_result = read_file_content_safe(repo, file_path, branch_name)
 

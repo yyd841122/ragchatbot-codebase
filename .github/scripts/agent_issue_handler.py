@@ -14,6 +14,62 @@ import zhipuai
 from github import Github
 
 
+def is_safe_path(file_path: str) -> bool:
+    """检查路径是否安全
+
+    规则：
+    - 空路径返回 False
+    - 绝对路径（以 / 开头）返回 False
+    - 禁止 '../' 相对路径跳转
+    - 路径按 '/' 分隔后最多 2 段
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        路径是否安全
+    """
+    # 空路径检查
+    if not file_path or not file_path.strip():
+        return False
+
+    # 绝对路径检查（以 / 开头）
+    if file_path.startswith('/'):
+        return False
+
+    # 禁止相对路径跳转
+    if '../' in file_path:
+        return False
+
+    # 统一路径分隔符
+    normalized = file_path.replace('\\', '/')
+
+    # 检查深度（按 / 分隔后最多 2 段）
+    parts = normalized.split('/')
+    return len(parts) <= 2
+
+
+def is_supported_markdown_file(file_path: str) -> bool:
+    """检查是否为支持的 Markdown 文件
+
+    规则：
+    - 必须以 .md 结尾
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 Markdown 文件
+    """
+    # 必须以 .md 结尾
+    if not file_path.lower().endswith('.md'):
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
 def get_env_var(var_name: str) -> str:
     """获取环境变量，如果不存在则退出"""
     value = os.getenv(var_name)
@@ -117,9 +173,21 @@ Todo List 要具体、可执行、可验证
 每个步骤应该是独立的、可以单独验证的
 优先给出"最小可行方案"，避免过度设计
 文件路径要基于项目根目录，使用相对路径
-**第一个文件必须是仓库根目录的真实文件 README.md**
-**禁止使用占位路径（如 path/to/README.md、docs/README.md）**
-**当前版本仅支持 README.md，不要计划修改其他类型文件**
+
+**支持的文件类型**：
+- 当前仅支持 Markdown 文档文件（.md）
+- 根目录的 .md 文件（如 `README.md`、`CHANGELOG.md`）
+- 一级子目录的 .md 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+
+**路径规则**：
+- 路径按 `/` 分隔后最多 2 段
+- 禁止相对路径跳转（如 `../file.md`）
+- 文件路径必须真实存在于仓库中
+
+**不支持的文件类型**：
+- 代码文件（.py, .js, .yml 等）
+- 配置文件（.env.example, .gitignore, requirements.txt 等）
+
 用简洁的中文描述
 如果信息不足，请明确写"信息不足"，不要编造不存在的实现细节
 
@@ -230,7 +298,7 @@ def extract_first_file_path(plan: str) -> str:
 
 
 def validate_first_file_exists(plan: str, repo) -> tuple[bool, str]:
-    """验证计划中的第一个文件是否真实存在
+    """验证计划中的第一个文件是否真实存在且符合规则
 
     Args:
         plan: AI 生成的计划
@@ -245,9 +313,22 @@ def validate_first_file_exists(plan: str, repo) -> tuple[bool, str]:
     if not first_file:
         return False, "计划中未找到文件路径，请检查计划格式"
 
-    # 检查是否为 README.md
-    if first_file != "README.md":
-        return False, f"当前版本仅支持 `README.md`，但计划中的第一个文件是 `{first_file}`。请在 Issue 中重新评论 `@zhipu`，并确保第一个文件是 `README.md`。"
+    # 检查是否为支持的 Markdown 文件
+    if not is_supported_markdown_file(first_file):
+        return False, f"""文件 `{first_file}` 不在当前支持范围内。
+
+**当前支持的文件类型**：
+- ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
+- ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
+- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`）
+
+**路径规则**：
+- 路径按 `/` 分隔后最多 2 段
+- 禁止相对路径跳转（如 `../file.md`）
+- 禁止绝对路径（如 `/etc/file.md`）
+
+请在 Issue 中重新评论 `@zhipu`，确保第一个文件符合上述规则。"""
 
     # 验证文件是否存在
     try:

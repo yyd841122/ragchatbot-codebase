@@ -21,6 +21,8 @@ from agent_issue_executor import (
     is_supported_append_only_config_file,
     _get_last_n_lines,
     construct_modification_objective,
+    validate_append_content,
+    append_to_file_content,
 )
 from agent_issue_handler import (
     is_safe_path as handler_is_safe_path,
@@ -176,6 +178,85 @@ def test_validate_first_file_with_config():
     print("  ✅ validate_first_file_exists() 测试通过\n")
 
 
+def test_validate_append_content():
+    """测试追加内容安全验证"""
+    print("🧪 测试 validate_append_content()...")
+
+    # 测试 1：空内容应该拒绝
+    print("  📝 测试 1：空内容")
+    result1 = validate_append_content(".gitignore", "", "existing content")
+    assert result1['valid'] == False, "❌ 空内容应该被拒绝"
+    print("    ✅ 空内容正确拒绝")
+
+    # 测试 2：包含敏感信息应该拒绝
+    print("  📝 测试 2：敏感信息")
+    result2 = validate_append_content(".env.example", "API_KEY=sk-abc123", "existing")
+    assert result2['valid'] == False, "❌ 包含 API key 应该被拒绝"
+    assert "敏感信息" in result2['reason'], "❌ 错误信息应该提示敏感信息"
+    print("    ✅ 敏感信息正确拒绝")
+
+    # 测试 3：正常内容应该通过
+    print("  📝 测试 3：正常 .gitignore 内容")
+    result3 = validate_append_content(".gitignore", "*.log\n\ntemp/", "existing")
+    assert result3['valid'] == True, f"❌ 正常内容应该通过，但: {result3['reason']}"
+    print("    ✅ 正常 .gitignore 内容通过")
+
+    # 测试 4：正常 .env.example 内容应该通过
+    print("  📝 测试 4：正常 .env.example 内容")
+    result4 = validate_append_content(".env.example", "# New variable\nNEW_VAR=example", "existing")
+    assert result4['valid'] == True, f"❌ 正常内容应该通过，但: {result4['reason']}"
+    print("    ✅ 正常 .env.example 内容通过")
+
+    # 测试 5：内容过长应该拒绝
+    print("  📝 测试 5：内容过长")
+    long_content = "\n".join([f"line{i}" for i in range(101)])
+    result5 = validate_append_content(".gitignore", long_content, "existing")
+    assert result5['valid'] == False, "❌ 过长内容应该被拒绝"
+    assert "过长" in result5['reason'], "❌ 错误信息应该提示过长"
+    print("    ✅ 过长内容正确拒绝")
+
+    # 测试 6：单行过长应该拒绝
+    print("  📝 测试 6：单行过长")
+    long_line = "a" * 1001
+    result6 = validate_append_content(".gitignore", long_line, "existing")
+    assert result6['valid'] == False, "❌ 单行过长应该被拒绝"
+    assert "过长的行" in result6['reason'], "❌ 错误信息应该提示单行过长"
+    print("    ✅ 单行过长正确拒绝")
+
+    print("  ✅ validate_append_content() 测试通过\n")
+
+
+def test_append_to_file_content():
+    """测试安全追加函数"""
+    print("🧪 测试 append_to_file_content()...")
+
+    # 测试 1：空文件追加
+    print("  📝 测试 1：空文件追加")
+    result1 = append_to_file_content("", "new line")
+    assert result1 == "new line\n", "❌ 空文件追加结果不正确"
+    print("    ✅ 空文件追加正确")
+
+    # 测试 2：正常追加（文件以换行符结尾）
+    print("  📝 测试 2：正常追加")
+    result2 = append_to_file_content("existing\n", "new line")
+    assert result2 == "existing\nnew line\n", "❌ 正常追加结果不正确"
+    print("    ✅ 正常追加正确")
+
+    # 测试 3：文件不以换行符结尾
+    print("  📝 测试 3：文件不以换行符结尾")
+    result3 = append_to_file_content("existing", "new line")
+    assert result3 == "existing\nnew line\n", "❌ 追加结果不正确"
+    print("    ✅ 不以换行符结尾的追加正确")
+
+    # 测试 4：确保结果以换行符结尾
+    print("  📝 测试 4：确保结果以换行符结尾")
+    result4 = append_to_file_content("existing\n", "new line")
+    assert result4.endswith('\n'), "❌ 结果应该以换行符结尾"
+    print("    ✅ 结果以换行符结尾正确")
+
+    print("  ✅ append_to_file_content() 测试通过\n")
+
+
 if __name__ == "__main__":
     try:
         print("="*60)
@@ -187,6 +268,8 @@ if __name__ == "__main__":
         test_construct_modification_objective()
         test_get_last_n_lines()
         test_validate_first_file_with_config()
+        test_validate_append_content()
+        test_append_to_file_content()
 
         print("="*60)
         print("✅ 所有本地逻辑测试通过")

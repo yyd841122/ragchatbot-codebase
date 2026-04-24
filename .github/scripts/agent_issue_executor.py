@@ -1481,6 +1481,156 @@ def _get_last_n_lines(content: str, n: int) -> str:
     return '\n'.join(lines[-n:])
 
 
+def validate_append_content(
+    file_path: str,
+    append_text: str,
+    existing_content: str
+) -> dict:
+    """验证 AI 生成的追加内容是否安全
+
+    检查规则：
+    1. 追加内容不能为空
+    2. 追加内容不能包含敏感信息（真实密钥、密码等）
+    3. 追加内容格式必须正确（.gitignore 或 .env.example）
+    4. 追加内容不能重复现有内容（简单检查）
+
+    Args:
+        file_path: 文件路径
+        append_text: AI 生成的追加内容
+        existing_content: 文件现有内容
+
+    Returns:
+        dict: {
+            'valid': bool,
+            'reason': str (如果不合法，说明原因)
+        }
+    """
+    # 统一路径格式
+    file_path_normalized = file_path.replace('\\', '/').lower()
+    basename = file_path_normalized.split('/')[-1]
+
+    # 检查 1：追加内容不能为空
+    if not append_text or not append_text.strip():
+        return {
+            'valid': False,
+            'reason': '追加内容为空'
+        }
+
+    # 检查 2：追加内容不能包含敏感信息
+    sensitive_patterns = [
+        'sk-',            # OpenAI API key
+        'api_key',        # 通用 API key
+        'secret',         # 密钥
+        'password',       # 密码
+        'token',          # 令牌
+        'AKID',           # AWS Access Key ID
+        'wjalr_uxto',     # AWS Secret Access Key pattern
+    ]
+
+    append_text_lower = append_text.lower()
+    for pattern in sensitive_patterns:
+        if pattern.lower() in append_text_lower:
+            return {
+                'valid': False,
+                'reason': f'追加内容包含敏感信息（检测到关键词: {pattern}）'
+            }
+
+    # 检查 3：追加内容格式必须正确
+    if basename == '.gitignore':
+        # .gitignore 格式检查
+        lines = append_text.strip().split('\n')
+        for line in lines:
+            line_stripped = line.strip()
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+            # 简单检查：不应该包含 = 或 : （不太像 .gitignore 规则）
+            if '=' in line_stripped and ':' in line_stripped:
+                # 可能是配置文件格式，不是 .gitignore 规则
+                # 但也可能是有效的 .gitignore（如 *.log:ignored）
+                # 这里只做警告，不拒绝
+                pass
+
+    elif basename == '.env.example':
+        # .env.example 格式检查
+        lines = append_text.strip().split('\n')
+        for line in lines:
+            line_stripped = line.strip()
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+            # 简单检查：应该包含 = （环境变量格式）
+            # 但也不是强制要求（可能有其他格式）
+            # 这里只做警告，不拒绝
+            pass
+
+    # 检查 4：追加内容不能完全重复现有内容（简单检查）
+    # 检查追加内容的前 50 个字符是否已经在现有内容的最后 50 个字符中
+    if len(existing_content) > 50 and len(append_text) > 50:
+        existing_tail = existing_content[-50:]
+        append_head = append_text[:50]
+        if append_head in existing_tail:
+            return {
+                'valid': False,
+                'reason': '追加内容可能与现有内容重复'
+            }
+
+    # 检查 5：追加内容不能过长（防止 AI 失控）
+    append_lines = append_text.split('\n')
+    if len(append_lines) > 100:
+        return {
+            'valid': False,
+            'reason': f'追加内容过长（{len(append_lines)} 行，超过 100 行限制）'
+        }
+
+    # 检查 6：追加内容单行不能过长
+    for line in append_lines:
+        if len(line) > 1000:
+            return {
+                'valid': False,
+                'reason': f'追加内容包含过长的行（{len(line)} 字符，超过 1000 字符限制）'
+            }
+
+    return {
+        'valid': True,
+        'reason': None
+    }
+
+
+def append_to_file_content(existing_content: str, append_text: str) -> str:
+    """安全地将内容追加到文件末尾
+
+    处理逻辑：
+    1. 如果现有内容为空，直接返回追加内容
+    2. 如果现有内容最后一行没有换行符，先添加一个
+    3. 追加新内容
+    4. 确保最终内容以换行符结尾
+
+    Args:
+        existing_content: 文件现有内容
+        append_text: 要追加的内容
+
+    Returns:
+        str: 追加后的完整内容
+    """
+    # 如果现有内容为空，直接返回追加内容
+    if not existing_content or not existing_content.strip():
+        return append_text.rstrip('\n') + '\n'
+
+    # 确保现有内容以换行符结尾
+    if not existing_content.endswith('\n'):
+        existing_content = existing_content + '\n'
+
+    # 追加新内容
+    result = existing_content + append_text
+
+    # 确保最终内容以换行符结尾
+    if not result.endswith('\n'):
+        result = result + '\n'
+
+    return result
+
+
 def validate_generated_content(
     new_content: str,
     original_content: str
@@ -1934,12 +2084,26 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         print(f"  📝 检测到配置文件，使用 append-only 模式")
         print(f"  📝 AI 生成的追加内容长度: {len(new_content)} 字符")
 
-        # 追加内容到文件末尾
-        # 如果当前文件最后一行没有换行符，先添加一个
-        if current_content and not current_content.endswith('\n'):
-            final_content = current_content + '\n' + new_content
-        else:
-            final_content = current_content + new_content
+        # 验证追加内容是否安全
+        print("🔍 验证追加内容安全性...")
+        append_validation = validate_append_content(file_path, new_content, current_content)
+
+        if not append_validation['valid']:
+            print(f"  ❌ 追加内容验证失败: {append_validation['reason']}")
+            reply_message = build_step5_skip_message(file_path, append_validation['reason'])
+            issue.create_comment(reply_message)
+            print("  ✅ 已回复跳过消息")
+            return {
+                'status': 'skipped',
+                'reason': append_validation['reason'],
+                'file_path': file_path,
+                'commit_sha': None
+            }
+
+        print(f"  ✅ 追加内容安全验证通过")
+
+        # 追加内容到文件末尾（使用安全的追加函数）
+        final_content = append_to_file_content(current_content, new_content)
 
         print(f"  ✅ 追加后的文件内容长度: {len(final_content)} 字符")
         print(f"  📊 追加了 {len(final_content) - len(current_content)} 字符")

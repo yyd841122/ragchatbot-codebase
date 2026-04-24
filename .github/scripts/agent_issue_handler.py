@@ -400,13 +400,19 @@ def main() -> None:
 
 ---
 
-**当前 MVP 限制**：
-- 仅支持修改根目录的 `README.md`
-- 不支持其他文件类型
+**当前支持的文件类型**：
+- ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
+- ✅ 一级子目录的 `.md` 文件（如 `docs/CODE_QUALITY.md`、`docs/GUIDE.md`）
+- ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
+- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`）
+
+**路径规则**：
+- 路径按 `/` 分隔后最多 2 段
+- 禁止相对路径跳转（如 `../file.md`）
 
 **请重新操作**：
 1. 在 Issue 中重新评论 `@zhipu`
-2. 确保生成的计划第一个文件是 `README.md`
+2. 确保生成的计划第一个文件符合上述规则
 
 🤖 由 Zhipu AI Stage 1 验证流程生成 | {os.getenv('REPO', '')}""")
         sys.exit(1)

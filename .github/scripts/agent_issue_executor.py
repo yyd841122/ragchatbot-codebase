@@ -1564,6 +1564,26 @@ def validate_append_content(
             var_name = parts[0].strip()
             var_value = parts[1].strip()
 
+            # 检查变量名格式：必须以大写字母开头，只包含大写字母、数字、下划线
+            if not var_name:
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名为空'
+                }
+
+            if not var_name[0].isupper():
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名必须以大写字母开头'
+                }
+
+            valid_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_')
+            if not all(c in valid_chars for c in var_name):
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名包含非法字符（只允许大写字母、数字、下划线）'
+                }
+
             # 移除行尾注释
             if '#' in var_value:
                 var_value = var_value.split('#')[0].strip()
@@ -1572,8 +1592,11 @@ def validate_append_content(
             # 检测明显的真实密钥模式
             dangerous_patterns = [
                 ('sk-', 'OpenAI API key'),
+                ('ghp_', 'GitHub personal access token'),
+                ('github_pat_', 'GitHub personal access token (fine-grained)'),
                 ('wjalr_uxto', 'AWS secret key pattern'),
                 ('AKID', 'AWS Access Key ID'),
+                ('AIza', 'Google API key'),
             ]
 
             var_value_lower = var_value.lower()
@@ -1661,6 +1684,8 @@ def validate_append_content(
 
     elif basename == '.env.example':
         # .env.example 格式检查
+        # 注意：变量名格式检查已经在敏感信息检测部分完成
+        # 这里只检查是否包含 "="
         lines = append_text.strip().split('\n')
         for line_num, line in enumerate(lines, 1):
             line_stripped = line.strip()
@@ -1676,47 +1701,33 @@ def validate_append_content(
                     'reason': f'.env.example 文件格式错误：第 {line_num} 行不包含 "="，环境变量应该使用 VAR_NAME=value 格式'
                 }
 
-            # 检查：变量名应该在 "=" 左边，且只包含字母数字下划线
-            parts = line_stripped.split('=', 1)
-            if len(parts) != 2:
+    # 检查 4：追加内容不能重复现有内容（精确行级检查）
+    # 对于 .gitignore，检查追加的规则是否已经存在
+    if basename == '.gitignore':
+        # 将现有内容和追加内容都拆分为行，检查重复
+        existing_lines = set(line.strip() for line in existing_content.split('\n') if line.strip())
+        append_lines = [line.strip() for line in append_text.split('\n') if line.strip()]
+
+        for append_line in append_lines:
+            # 跳过注释行
+            if append_line.startswith('#'):
+                continue
+
+            if append_line in existing_lines:
                 return {
                     'valid': False,
-                    'reason': f'.env.example 文件格式错误：第 {line_num} 行格式不正确（应该只有一个 "="）'
+                    'reason': f'追加内容与现有内容重复（规则: {append_line}）'
                 }
-
-            var_name = parts[0].strip()
-
-            # 变量名应该只包含字母、数字、下划线，且不能以数字开头
-            if not var_name:
+    else:
+        # 对于其他文件，使用简单的尾部检查（原有逻辑）
+        if len(existing_content) > 50 and len(append_text) > 50:
+            existing_tail = existing_content[-50:]
+            append_head = append_text[:50]
+            if append_head in existing_tail:
                 return {
                     'valid': False,
-                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名为空'
+                    'reason': '追加内容可能与现有内容重复'
                 }
-
-            if var_name[0].isdigit():
-                return {
-                    'valid': False,
-                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名不能以数字开头'
-                }
-
-            # 检查变量名是否只包含合法字符
-            valid_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_')
-            if not all(c in valid_chars for c in var_name):
-                return {
-                    'valid': False,
-                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名包含非法字符（只允许字母、数字、下划线）'
-                }
-
-    # 检查 4：追加内容不能完全重复现有内容（简单检查）
-    # 检查追加内容的前 50 个字符是否已经在现有内容的最后 50 个字符中
-    if len(existing_content) > 50 and len(append_text) > 50:
-        existing_tail = existing_content[-50:]
-        append_head = append_text[:50]
-        if append_head in existing_tail:
-            return {
-                'valid': False,
-                'reason': '追加内容可能与现有内容重复'
-            }
 
     # 检查 5：追加内容不能过长（防止 AI 失控）
     append_lines = append_text.split('\n')

@@ -250,6 +250,66 @@ def test_validate_append_content():
     assert "格式错误" in result10['reason'], "❌ 错误信息应该提示格式错误"
     print("    ✅ .env.example 不包含等号正确拒绝")
 
+    # 测试 11：.env.example 安全占位符应该允许
+    print("  📝 测试 11：.env.example 安全占位符")
+    result11 = validate_append_content(
+        ".env.example",
+        "OPENAI_API_KEY=your_openai_api_key_here\nZHIPU_API_KEY=your_zhipu_api_key_here\nGITHUB_TOKEN=your_github_token_here",
+        "existing"
+    )
+    assert result11['valid'] == True, f"❌ 安全占位符应该通过，但: {result11['reason']}"
+    print("    ✅ 安全占位符通过")
+
+    # 测试 12：.env.example GitHub token 应该拒绝
+    print("  📝 测试 12：.env.example GitHub token (ghp_)")
+    result12 = validate_append_content(".env.example", "GITHUB_TOKEN=ghp_abc123", "existing")
+    assert result12['valid'] == False, "❌ GitHub token (ghp_) 应该被拒绝"
+    assert "真实密钥" in result12['reason'], "❌ 错误信息应该提示真实密钥"
+    print("    ✅ GitHub token (ghp_) 正确拒绝")
+
+    # 测试 13：.env.example GitHub token (github_pat_) 应该拒绝
+    print("  📝 测试 13：.env.example GitHub token (github_pat_)")
+    result13 = validate_append_content(".env.example", "GITHUB_TOKEN=github_pat_abc123", "existing")
+    assert result13['valid'] == False, "❌ GitHub token (github_pat_) 应该被拒绝"
+    assert "真实密钥" in result13['reason'], "❌ 错误信息应该提示真实密钥"
+    print("    ✅ GitHub token (github_pat_) 正确拒绝")
+
+    # 测试 14：.env.example Google API key 应该拒绝
+    print("  📝 测试 14：.env.example Google API key (AIza)")
+    result14 = validate_append_content(".env.example", "GOOGLE_API_KEY=AIzaabc123", "existing")
+    assert result14['valid'] == False, "❌ Google API key (AIza) 应该被拒绝"
+    assert "真实密钥" in result14['reason'], "❌ 错误信息应该提示真实密钥"
+    print("    ✅ Google API key (AIza) 正确拒绝")
+
+    # 测试 15：.env.example 非法变量名格式（小写开头）应该拒绝
+    print("  📝 测试 15：.env.example 非法变量名（小写开头）")
+    result15 = validate_append_content(".env.example", "openai_key=value", "existing")
+    assert result15['valid'] == False, "❌ 非法变量名（小写开头）应该被拒绝"
+    assert "大写字母开头" in result15['reason'], "❌ 错误信息应该提示大写字母开头"
+    print("    ✅ 非法变量名正确拒绝")
+
+    # 测试 16：.env.example 非法变量名格式（包含特殊字符）应该拒绝
+    print("  📝 测试 16：.env.example 非法变量名（包含 -）")
+    result16 = validate_append_content(".env.example", "OpenAI-Key=value", "existing")
+    assert result16['valid'] == False, "❌ 非法变量名（包含 -）应该被拒绝"
+    assert "非法字符" in result16['reason'], "❌ 错误信息应该提示非法字符"
+    print("    ✅ 非法变量名正确拒绝")
+
+    # 测试 17：.gitignore 重复规则应该拒绝
+    print("  📝 测试 17：.gitignore 重复规则")
+    existing_gitignore = "*.log\n*.tmp\n"
+    result17 = validate_append_content(".gitignore", "*.log", existing_gitignore)
+    assert result17['valid'] == False, "❌ .gitignore 重复规则应该被拒绝"
+    assert "重复" in result17['reason'], "❌ 错误信息应该提示重复"
+    print("    ✅ .gitignore 重复规则正确拒绝")
+
+    # 测试 18：.gitignore 正常规则应该允许
+    print("  📝 测试 18：.gitignore 正常规则")
+    existing_gitignore = "*.log\n*.tmp\n"
+    result18 = validate_append_content(".gitignore", "*.bak", existing_gitignore)
+    assert result18['valid'] == True, f"❌ .gitignore 正常规则应该通过，但: {result18['reason']}"
+    print("    ✅ .gitignore 正常规则通过")
+
     print("  ✅ validate_append_content() 测试通过\n")
 
 

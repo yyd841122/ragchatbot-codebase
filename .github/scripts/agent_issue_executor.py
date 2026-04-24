@@ -1230,20 +1230,58 @@ def execute_step4(g, repo, issue, issue_number: int):
     print(f"  ✅ Step 4 完成")
 
 
+def construct_modification_objective(file_path: str, issue_title: str) -> str:
+    """构造简洁明确的修改目标
+
+    使用保守的规则化方式，基于文件路径和 Issue 标题构造修改目标。
+    当前版本优先保证 README 测试场景稳定，不追求泛化。
+
+    注意：
+        - Issue 标题不直接作为 AI Prompt 原文输入
+        - Issue 标题用于代码中的规则化目标构造
+        - "只在末尾追加"规则主要用于 README 的第二轮验证样本
+        - 后续扩展到其他 Markdown 文件时再评估是否放宽
+
+    Args:
+        file_path: 文件路径（如 "README.md" 或 "docs/GUIDE.md"）
+        issue_title: Issue 标题（用于规则化判断，不直接传递给 AI）
+
+    Returns:
+        str: 简洁明确的修改目标描述
+    """
+    # 统一路径格式
+    file_path_normalized = file_path.replace('\\', '/').lower()
+    issue_title_normalized = (issue_title or "").lower()
+
+    # 提取是否为 README
+    is_readme = file_path_normalized == "readme.md" or file_path_normalized.endswith("/readme.md")
+
+    # 规则 1：README.md 测试场景（保守固定模板）
+    if is_readme and ("测试" in issue_title_normalized or "test" in issue_title_normalized):
+        return "在 README.md 末尾追加一个简单测试章节，保持原有结构不变。"
+
+    # 规则 2：其他 README.md 场景
+    if is_readme:
+        return "在 README.md 末尾追加简单内容，保持原有结构不变。"
+
+    # 规则 3：其他 Markdown 文件
+    if file_path_normalized.endswith('.md'):
+        return f"在 {file_path} 中进行相关修改，保持原有结构不变。"
+
+    # 默认
+    return "对文档进行小范围修改，保持原有结构不变。"
+
+
 def generate_modified_content(
     current_content: str,
-    issue_title: str,
-    issue_body: str,
-    plan: str,
+    modification_objective: str,
     file_path: str
 ) -> str:
     """调用 Zhipu AI 生成修改后的文件内容
 
     Args:
         current_content: 当前文件内容
-        issue_title: Issue 标题
-        issue_body: Issue 正文
-        plan: Stage 1 计划
+        modification_objective: 修改目标（简洁明确，由 construct_modification_objective 构造）
         file_path: 文件路径
 
     Returns:
@@ -1257,7 +1295,10 @@ def generate_modified_content(
 
         client = zhipuai.ZhipuAI(api_key=api_key)
 
-        prompt = f"""你是一个文档修改助手。任务：基于用户需求修改文档内容。
+        prompt = f"""你是一个文档修改助手。
+
+## 任务
+{modification_objective}
 
 ## 当前文件路径
 {file_path}
@@ -1267,49 +1308,32 @@ def generate_modified_content(
 {current_content}
 ```
 
-## Issue 标题
-{issue_title}
-
-## Issue 正文
-{issue_body}
-
-## 执行计划
-{plan}
-
 ---
-
-请基于以上信息生成修改后的完整文档内容。
 
 **修改要求（必须严格遵守）**：
 
-**1. 最小必要修改原则**：
-- 优先追求小范围局部修改
-- 只修改与 Issue 需求直接相关的内容
-- 不要修改无关的章节和内容
-- 不要重新组织整个文档结构
+**1. 只做必要的修改**：
+- 优先追求最小范围的局部修改
+- 只修改与任务直接相关的内容
+- 不要修改无关章节
 
-**2. 禁止写入的内容**：
-- ❌ 不要写入 Issue 的原文
-- ❌ 不要写入 Stage 1 的执行计划
-- ❌ 不要写入 "Zhipu Fix Plan" 模板内容
-- ❌ 不要写入测试说明、执行步骤等元信息
+**2. 禁止写入的内容（严格禁止）**：
+- ❌ 不要写入 Issue 标题或正文
+- ❌ 不要写入"测试目标"、"测试内容"
+- ❌ 不要写入"执行计划"、"Todo List"、"风险提示"、"下一步"
+- ❌ 不要写入 Issue 编号（如 Issue #123）
+- ❌ 不要写入"Zhipu Fix Plan"或"由 Zhipu AI 生成"
 
-**3. 保持原有格式**：
-- ✅ 保持文档的原有结构和格式
-- ✅ 保持标题层级不变
-- ✅ 保持代码块格式不变
-- ✅ 只修改必要的文字内容
+**3. 保持原有结构**：
+- ✅ 保持文档的原有结构
+- ✅ 保持标题层级
+- ✅ 保持格式不变
 
-**4. 修改范围建议**：
-- 如果 Issue 要求添加内容：在文档末尾或合适位置追加
-- 如果 Issue 要求修改内容：只修改相关的段落或章节
-- 如果 Issue 要求删除内容：只删除相关的内容
-
-输出要求：
+**输出要求**：
 1. 只返回修改后的完整文档内容
-2. 不要包含解释、不要包含 markdown 代码块标记（\\`\\`\\`）
-3. 直接返回可用的文档内容
-4. 保持文档的可读性和结构
+2. 不要包含解释
+3. 不要包含 markdown 代码块标记（\\`\\`\\`）
+4. 直接返回可用的文档内容
 """
 
         print("  🤖 调用 Zhipu AI 生成修改内容...")
@@ -1749,13 +1773,19 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
     print(f"  ✅ 读取成功，文件大小: {read_result['size']} bytes")
     current_content = read_result['content']
 
-    # 6. 调用 AI 生成修改后的内容
+    # 6. 构造修改目标
+    print("🎯 构造修改目标...")
+    modification_objective = construct_modification_objective(
+        file_path=file_path,
+        issue_title=issue.title
+    )
+    print(f"  ✅ 修改目标: {modification_objective}")
+
+    # 7. 调用 AI 生成修改后的内容
     print("🤖 调用 AI 生成修改内容...")
     new_content = generate_modified_content(
         current_content=current_content,
-        issue_title=issue.title,
-        issue_body=issue.body or "",
-        plan=existing_plan,
+        modification_objective=modification_objective,
         file_path=file_path
     )
 

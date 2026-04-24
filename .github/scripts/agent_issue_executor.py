@@ -1517,52 +1517,195 @@ def validate_append_content(
         }
 
     # 检查 2：追加内容不能包含敏感信息
-    sensitive_patterns = [
-        'sk-',            # OpenAI API key
-        'api_key',        # 通用 API key
-        'secret',         # 密钥
-        'password',       # 密码
-        'token',          # 令牌
-        'AKID',           # AWS Access Key ID
-        'wjalr_uxto',     # AWS Secret Access Key pattern
-    ]
+    # 对于 .gitignore 和 .env.example 使用不同的检测策略
 
-    append_text_lower = append_text.lower()
-    for pattern in sensitive_patterns:
-        if pattern.lower() in append_text_lower:
-            return {
-                'valid': False,
-                'reason': f'追加内容包含敏感信息（检测到关键词: {pattern}）'
-            }
+    if basename == '.gitignore':
+        # .gitignore：严格检测，不应该包含任何敏感关键词
+        sensitive_patterns = [
+            'sk-',            # OpenAI API key
+            'api_key',        # 通用 API key
+            'secret',         # 密钥
+            'password',       # 密码
+            'token',          # 令牌
+            'AKID',           # AWS Access Key ID
+            'wjalr_uxto',     # AWS Secret Access Key pattern
+        ]
+
+        append_text_lower = append_text.lower()
+        for pattern in sensitive_patterns:
+            if pattern.lower() in append_text_lower:
+                return {
+                    'valid': False,
+                    'reason': f'追加内容包含敏感信息（检测到关键词: {pattern}）'
+                }
+
+    elif basename == '.env.example':
+        # .env.example：检测变量值是否是真实密钥，而不是变量名
+        # 允许变量名包含敏感词（如 API_KEY=、SECRET_KEY=）
+        # 但检测变量值是否是真实密钥
+
+        lines = append_text.strip().split('\n')
+        for line in lines:
+            line_stripped = line.strip()
+
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+
+            # 解析环境变量行（格式：VAR_NAME=value 或 VAR_NAME=value # comment）
+            if '=' not in line_stripped:
+                continue
+
+            # 分割变量名和值
+            parts = line_stripped.split('=', 1)
+            if len(parts) != 2:
+                continue
+
+            var_name = parts[0].strip()
+            var_value = parts[1].strip()
+
+            # 移除行尾注释
+            if '#' in var_value:
+                var_value = var_value.split('#')[0].strip()
+
+            # 检测变量值是否是真实密钥
+            # 检测明显的真实密钥模式
+            dangerous_patterns = [
+                ('sk-', 'OpenAI API key'),
+                ('wjalr_uxto', 'AWS secret key pattern'),
+                ('AKID', 'AWS Access Key ID'),
+            ]
+
+            var_value_lower = var_value.lower()
+            for pattern, desc in dangerous_patterns:
+                if pattern.lower() in var_value_lower:
+                    return {
+                        'valid': False,
+                        'reason': f'变量值包含疑似真实密钥（检测到 {desc} 模式）'
+                    }
+
+            # 检测长随机字符串（可能是真实密钥）
+            # 规则：超过 32 个字符，且包含大小写字母、数字、特殊字符
+            if len(var_value) > 32:
+                # 简单启发式：如果看起来像密钥（高熵值）
+                # 包含大写字母、小写字母、数字、特殊字符中的至少 3 种
+                has_upper = any(c.isupper() for c in var_value)
+                has_lower = any(c.islower() for c in var_value)
+                has_digit = any(c.isdigit() for c in var_value)
+                has_special = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in var_value)
+
+                complexity = sum([has_upper, has_lower, has_digit, has_special])
+
+                # 如果复杂度高且长度长，可能是真实密钥
+                if complexity >= 3 and not any(x in var_value.lower() for x in ['example', 'test', 'your_', 'dummy', 'placeholder', 'xxx']):
+                    return {
+                        'valid': False,
+                        'reason': '变量值看起来像是真实密钥（长随机字符串），请使用示例值'
+                    }
+
+            # 检测明显的占位符（这些是允许的）
+            allowed_placeholders = [
+                'example',
+                'test',
+                'your_',
+                'dummy',
+                'placeholder',
+                'xxx',
+                'replace',
+                'changeme',
+                '<',
+                '>',
+            ]
+
+            # 如果变量值包含明显的占位符，则允许
+            if any(placeholder in var_value.lower() for placeholder in allowed_placeholders):
+                continue
+
+            # 对于非占位符的长值，给出警告但不拒绝（仅记录）
+            if len(var_value) > 20:
+                # 可能有风险，但不拒绝，让人工 review 决定
+                print(f"  ⚠️ 注意：变量 {var_name} 的值较长（{len(var_value)} 字符），请人工 review 确认")
 
     # 检查 3：追加内容格式必须正确
     if basename == '.gitignore':
         # .gitignore 格式检查
         lines = append_text.strip().split('\n')
-        for line in lines:
+        for line_num, line in enumerate(lines, 1):
             line_stripped = line.strip()
+
             # 跳过空行和注释
             if not line_stripped or line_stripped.startswith('#'):
                 continue
-            # 简单检查：不应该包含 = 或 : （不太像 .gitignore 规则）
-            if '=' in line_stripped and ':' in line_stripped:
-                # 可能是配置文件格式，不是 .gitignore 规则
-                # 但也可能是有效的 .gitignore（如 *.log:ignored）
-                # 这里只做警告，不拒绝
-                pass
+
+            # 检查：是否看起来像环境变量格式
+            # 如果行包含 "=" 且两边都是简单的字母数字下划线，可能是环境变量
+            if '=' in line_stripped and not line_stripped.startswith('#'):
+                parts = line_stripped.split('=', 1)
+                if len(parts) == 2:
+                    left_part = parts[0].strip()
+                    right_part = parts[1].strip()
+
+                    # 检查左边是否是纯变量名格式
+                    if left_part.replace('_', '').replace('-', '').isalnum():
+                        # 检查右边是否也只包含简单字符（没有 .gitignore 常见的通配符）
+                        # .gitignore 通常包含 * ? / 等特殊字符
+                        ignore_special_chars = set('*?[]/\\')
+                        has_ignore_special = any(c in right_part for c in ignore_special_chars)
+
+                        # 如果没有 .gitignore 特殊字符，可能是环境变量
+                        if not has_ignore_special and right_part.replace('_', '').replace('-', '.').isalnum():
+                            return {
+                                'valid': False,
+                                'reason': f'.gitignore 文件格式错误：第 {line_num} 行看起来像是环境变量格式（包含 "="），.gitignore 应该只包含忽略规则'
+                            }
 
     elif basename == '.env.example':
         # .env.example 格式检查
         lines = append_text.strip().split('\n')
-        for line in lines:
+        for line_num, line in enumerate(lines, 1):
             line_stripped = line.strip()
+
             # 跳过空行和注释
             if not line_stripped or line_stripped.startswith('#'):
                 continue
-            # 简单检查：应该包含 = （环境变量格式）
-            # 但也不是强制要求（可能有其他格式）
-            # 这里只做警告，不拒绝
-            pass
+
+            # 检查：非空非注释行应该包含 "="（环境变量格式）
+            if '=' not in line_stripped:
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行不包含 "="，环境变量应该使用 VAR_NAME=value 格式'
+                }
+
+            # 检查：变量名应该在 "=" 左边，且只包含字母数字下划线
+            parts = line_stripped.split('=', 1)
+            if len(parts) != 2:
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行格式不正确（应该只有一个 "="）'
+                }
+
+            var_name = parts[0].strip()
+
+            # 变量名应该只包含字母、数字、下划线，且不能以数字开头
+            if not var_name:
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名为空'
+                }
+
+            if var_name[0].isdigit():
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名不能以数字开头'
+                }
+
+            # 检查变量名是否只包含合法字符
+            valid_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_')
+            if not all(c in valid_chars for c in var_name):
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行变量名包含非法字符（只允许字母、数字、下划线）'
+                }
 
     # 检查 4：追加内容不能完全重复现有内容（简单检查）
     # 检查追加内容的前 50 个字符是否已经在现有内容的最后 50 个字符中

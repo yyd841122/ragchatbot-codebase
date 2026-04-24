@@ -188,40 +188,67 @@ def test_validate_append_content():
     assert result1['valid'] == False, "❌ 空内容应该被拒绝"
     print("    ✅ 空内容正确拒绝")
 
-    # 测试 2：包含敏感信息应该拒绝
-    print("  📝 测试 2：敏感信息")
-    result2 = validate_append_content(".env.example", "API_KEY=sk-abc123", "existing")
-    assert result2['valid'] == False, "❌ 包含 API key 应该被拒绝"
-    assert "敏感信息" in result2['reason'], "❌ 错误信息应该提示敏感信息"
-    print("    ✅ 敏感信息正确拒绝")
+    # 测试 2：.env.example 中包含正常变量名应该通过（修复误杀）
+    print("  📝 测试 2：.env.example 正常变量名（API_KEY）")
+    result2 = validate_append_content(".env.example", "API_KEY=example_value", "existing")
+    assert result2['valid'] == True, f"❌ 正常变量名应该通过，但: {result2['reason']}"
+    print("    ✅ 正常变量名通过")
 
-    # 测试 3：正常内容应该通过
-    print("  📝 测试 3：正常 .gitignore 内容")
-    result3 = validate_append_content(".gitignore", "*.log\n\ntemp/", "existing")
-    assert result3['valid'] == True, f"❌ 正常内容应该通过，但: {result3['reason']}"
+    # 测试 3：.env.example 中包含真实密钥模式应该拒绝
+    print("  📝 测试 3：.env.example 真实密钥（sk-）")
+    result3 = validate_append_content(".env.example", "API_KEY=sk-abc123", "existing")
+    assert result3['valid'] == False, "❌ 包含真实密钥应该被拒绝"
+    assert "真实密钥" in result3['reason'], "❌ 错误信息应该提示真实密钥"
+    print("    ✅ 真实密钥正确拒绝")
+
+    # 测试 4：.gitignore 中包含敏感信息应该拒绝
+    print("  📝 测试 4：.gitignore 包含敏感词")
+    result4 = validate_append_content(".gitignore", "secret_file.txt", "existing")
+    assert result4['valid'] == False, "❌ .gitignore 包含敏感词应该被拒绝"
+    assert "敏感信息" in result4['reason'], "❌ 错误信息应该提示敏感信息"
+    print("    ✅ .gitignore 敏感词正确拒绝")
+
+    # 测试 5：正常 .gitignore 内容应该通过
+    print("  📝 测试 5：正常 .gitignore 内容")
+    result5 = validate_append_content(".gitignore", "*.log\n\n# Temporary files\ntemp/\n*.tmp", "existing")
+    assert result5['valid'] == True, f"❌ 正常 .gitignore 内容应该通过，但: {result5['reason']}"
     print("    ✅ 正常 .gitignore 内容通过")
 
-    # 测试 4：正常 .env.example 内容应该通过
-    print("  📝 测试 4：正常 .env.example 内容")
-    result4 = validate_append_content(".env.example", "# New variable\nNEW_VAR=example", "existing")
-    assert result4['valid'] == True, f"❌ 正常内容应该通过，但: {result4['reason']}"
+    # 测试 6：正常 .env.example 内容应该通过
+    print("  📝 测试 6：正常 .env.example 内容")
+    result6 = validate_append_content(".env.example", "# New variables\nAPI_KEY=example_value\nSECRET_KEY=changeme", "existing")
+    assert result6['valid'] == True, f"❌ 正常 .env.example 内容应该通过，但: {result6['reason']}"
     print("    ✅ 正常 .env.example 内容通过")
 
-    # 测试 5：内容过长应该拒绝
-    print("  📝 测试 5：内容过长")
+    # 测试 7：内容过长应该拒绝
+    print("  📝 测试 7：内容过长")
     long_content = "\n".join([f"line{i}" for i in range(101)])
-    result5 = validate_append_content(".gitignore", long_content, "existing")
-    assert result5['valid'] == False, "❌ 过长内容应该被拒绝"
-    assert "过长" in result5['reason'], "❌ 错误信息应该提示过长"
+    result7 = validate_append_content(".gitignore", long_content, "existing")
+    assert result7['valid'] == False, "❌ 过长内容应该被拒绝"
+    assert "过长" in result7['reason'], "❌ 错误信息应该提示过长"
     print("    ✅ 过长内容正确拒绝")
 
-    # 测试 6：单行过长应该拒绝
-    print("  📝 测试 6：单行过长")
+    # 测试 8：单行过长应该拒绝
+    print("  📝 测试 8：单行过长")
     long_line = "a" * 1001
-    result6 = validate_append_content(".gitignore", long_line, "existing")
-    assert result6['valid'] == False, "❌ 单行过长应该被拒绝"
-    assert "过长的行" in result6['reason'], "❌ 错误信息应该提示单行过长"
+    result8 = validate_append_content(".gitignore", long_line, "existing")
+    assert result8['valid'] == False, "❌ 单行过长应该被拒绝"
+    assert "过长的行" in result8['reason'], "❌ 错误信息应该提示单行过长"
     print("    ✅ 单行过长正确拒绝")
+
+    # 测试 9：.gitignore 包含环境变量格式应该拒绝（格式检查）
+    print("  📝 测试 9：.gitignore 包含环境变量格式")
+    result9 = validate_append_content(".gitignore", "CONFIG=value", "existing")
+    assert result9['valid'] == False, "❌ .gitignore 包含环境变量格式应该被拒绝"
+    assert "格式错误" in result9['reason'], "❌ 错误信息应该提示格式错误"
+    print("    ✅ .gitignore 环境变量格式正确拒绝")
+
+    # 测试 10：.env.example 不包含 "=" 应该拒绝（格式检查）
+    print("  📝 测试 10：.env.example 不包含等号")
+    result10 = validate_append_content(".env.example", "just_a_word", "existing")
+    assert result10['valid'] == False, "❌ .env.example 不包含等号应该被拒绝"
+    assert "格式错误" in result10['reason'], "❌ 错误信息应该提示格式错误"
+    print("    ✅ .env.example 不包含等号正确拒绝")
 
     print("  ✅ validate_append_content() 测试通过\n")
 

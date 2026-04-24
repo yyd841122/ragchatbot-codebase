@@ -1,6 +1,6 @@
 # Zhipu AI Agent 使用文档
 
-本文档说明如何在当前仓库中使用 Zhipu AI Agent，从 GitHub Issue 生成执行计划、自动修改 `README.md`，并创建 Draft Pull Request。
+本文档说明如何在当前仓库中使用 Zhipu AI Agent，从 GitHub Issue 生成执行计划、自动修改目标 `.md` 文件，并创建 Draft Pull Request。
 
 ---
 
@@ -19,7 +19,7 @@
      - Step 2：读取 Issue 上下文和 Stage 1 计划
      - Step 3：创建工作分支 `zhipu/issue-{issue_number}`
      - Step 4：预览第一个目标文件
-     - Step 5：修改 `README.md` 并创建 commit
+     - Step 5：修改目标文件并创建 commit
      - Step 6：自动创建 Draft PR
 
 3. **人工确认**

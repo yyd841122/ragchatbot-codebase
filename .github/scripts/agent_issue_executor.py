@@ -97,6 +97,39 @@ def is_supported_markdown_file(file_path: str) -> bool:
     return is_safe_path(file_path)
 
 
+def is_supported_append_only_config_file(file_path: str) -> bool:
+    """检查是否为支持的 append-only 配置文件
+
+    规则：
+    - 只支持 .gitignore 和 .env.example
+    - 必须在根目录（路径按 / 分隔后只有 1 段）
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 append-only 配置文件
+    """
+    # 统一路径格式
+    normalized = file_path.replace('\\', '/')
+
+    # 提取 basename
+    basename = normalized.split('/')[-1].lower()
+
+    # 检查是否为支持的配置文件
+    supported_config_files = ['.gitignore', '.env.example']
+    if basename not in supported_config_files:
+        return False
+
+    # 必须在根目录（路径按 / 分隔后只有 1 段）
+    if len(normalized.split('/')) != 1:
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
 def verify_file_exists(repo, file_path: str) -> bool:
     """验证文件是否存在
 
@@ -1256,6 +1289,15 @@ def construct_modification_objective(file_path: str, issue_title: str) -> str:
     # 提取是否为 README
     is_readme = file_path_normalized == "readme.md" or file_path_normalized.endswith("/readme.md")
 
+    # 提取 basename（用于配置文件判断）
+    basename = file_path_normalized.split('/')[-1]
+
+    # 配置文件 append-only 模式
+    if basename == '.gitignore':
+        return "在 .gitignore 文件末尾追加新的忽略规则，保持原有规则不变。只返回要追加的内容，不要返回完整的 .gitignore 文件。"
+    if basename == '.env.example':
+        return "在 .env.example 文件末尾追加新的环境变量示例，保持原有变量不变。只返回要追加的内容，不要返回完整的 .env.example 文件。"
+
     # 规则 1：README.md 测试场景（保守固定模板）
     if is_readme and ("测试" in issue_title_normalized or "test" in issue_title_normalized):
         return "在 README.md 末尾追加一个简单测试章节，保持原有结构不变。"
@@ -1286,6 +1328,8 @@ def generate_modified_content(
 
     Returns:
         str: AI 生成的修改后内容，如果失败则返回空字符串
+             对于配置文件，返回要追加的内容片段（不包含原有内容）
+             对于 Markdown 文件，返回完整的文件内容
     """
     try:
         api_key = os.getenv("ZHIPU_API_KEY")
@@ -1295,7 +1339,54 @@ def generate_modified_content(
 
         client = zhipuai.ZhipuAI(api_key=api_key)
 
-        prompt = f"""你是一个文档修改助手。
+        # 判断是否为 append-only 配置文件
+        file_path_normalized = file_path.replace('\\', '/').lower()
+        basename = file_path_normalized.split('/')[-1]
+        is_append_only_config = basename in ['.gitignore', '.env.example']
+
+        # 对于 append-only 配置文件，使用特殊的 Prompt
+        if is_append_only_config:
+            prompt = f"""你是一个配置文件修改助手。
+
+## 任务
+{modification_objective}
+
+## 配置文件路径
+{file_path}
+
+## 当前配置文件末尾内容（最后 10 行）
+```
+{_get_last_n_lines(current_content, 10)}
+```
+
+---
+
+**修改要求（必须严格遵守）**：
+
+**1. 只生成要追加的内容**：
+- ✅ 只返回要追加到文件末尾的新内容
+- ❌ 不要返回完整的配置文件
+- ❌ 不要包含原有内容
+
+**2. 禁止写入的内容（严格禁止）**：
+- ❌ 不要写入真实的 API 密钥、密码、敏感信息
+- ❌ 不要写入 "示例密钥"、"your-api-key-here" 等占位符
+- ❌ 不要写入 Issue 标题、Issue 编号
+
+**3. 内容格式要求**：
+- **.gitignore**: 每行一个忽略规则，格式如 `*.log` 或 `temp/`
+- **.env.example**: 每行一个环境变量示例，格式如 `VAR_NAME=example_value` 或 `# 注释`
+
+**输出要求**：
+1. 只返回要追加的内容片段
+2. 不要包含解释
+3. 不要包含 markdown 代码块标记（\\`\\`\\`）
+4. 第一行前面不要加换行符
+5. 最后一行后面加一个换行符
+"""
+        else:
+            # Markdown 文件使用原有的 Prompt
+            prompt = f"""你是一个文档修改助手。
 
 ## 任务
 {modification_objective}
@@ -1372,6 +1463,22 @@ def generate_modified_content(
     except Exception as e:
         print(f"  ❌ 调用 Zhipu AI 失败: {e}")
         return ""
+
+
+def _get_last_n_lines(content: str, n: int) -> str:
+    """获取文本的最后 n 行
+
+    Args:
+        content: 文本内容
+        n: 行数
+
+    Returns:
+        最后 n 行的内容
+    """
+    lines = content.split('\n')
+    if len(lines) <= n:
+        return content
+    return '\n'.join(lines[-n:])
 
 
 def validate_generated_content(
@@ -1615,13 +1722,18 @@ def build_step5_unsupported_file_message(file_path: str) -> str:
 **当前支持的文件类型**：
 - ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
 - ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ✅ 根目录的配置文件（仅 `.gitignore`、`.env.example`，append-only 模式）
 - ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
-- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`、`requirements.txt`）
+- ❌ 不支持其他文件类型（如 `.py`、`requirements.txt`）
 
 **路径规则**：
 - 路径按 `/` 分隔后最多 2 段
 - 禁止相对路径跳转（如 `../file.md`）
 - 禁止绝对路径（如 `/etc/file.md`）
+
+**配置文件使用说明**：
+- `.gitignore` 和 `.env.example` 只支持 append-only 模式
+- 不能修改或删除现有内容，只能在末尾追加新内容
 
 **如何修复**：
 1. 检查文件路径是否符合上述规则
@@ -1735,14 +1847,19 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     # 4. 检查文件类型和路径安全（先检查类型和路径）
     print("🔍 检查文件类型和路径安全...")
-    if not is_supported_markdown_file(file_path):
+
+    # 判断文件类型
+    is_markdown = is_supported_markdown_file(file_path)
+    is_config = is_supported_append_only_config_file(file_path)
+
+    if not is_markdown and not is_config:
         print(f"  ℹ️ 文件 {file_path} 不在支持范围内")
         reply_message = build_step5_unsupported_file_message(file_path)
         issue.create_comment(reply_message)
         print("  ✅ 已回复跳过消息")
         return {
             'status': 'skipped',
-            'reason': f'文件 {file_path} 不在支持范围内（仅支持根目录和一级子目录的 .md 文件）',
+            'reason': f'文件 {file_path} 不在支持范围内（仅支持 .md 文件和 .gitignore/.env.example 配置文件）',
             'file_path': file_path,
             'commit_sha': None
         }
@@ -1812,11 +1929,28 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
             'commit_sha': None
         }
 
-    print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
+    # 对于配置文件，将 AI 生成的追加内容拼接到文件末尾
+    if is_config:
+        print(f"  📝 检测到配置文件，使用 append-only 模式")
+        print(f"  📝 AI 生成的追加内容长度: {len(new_content)} 字符")
+
+        # 追加内容到文件末尾
+        # 如果当前文件最后一行没有换行符，先添加一个
+        if current_content and not current_content.endswith('\n'):
+            final_content = current_content + '\n' + new_content
+        else:
+            final_content = current_content + new_content
+
+        print(f"  ✅ 追加后的文件内容长度: {len(final_content)} 字符")
+        print(f"  📊 追加了 {len(final_content) - len(current_content)} 字符")
+    else:
+        # Markdown 文件，使用 AI 生成的完整内容
+        final_content = new_content
+        print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
 
     # 6.5. 验证修改质量（新增：质量控制）
     print("🔍 验证修改质量...")
-    quality_check = validate_modification_quality(current_content, new_content)
+    quality_check = validate_modification_quality(current_content, final_content)
 
     if not quality_check['valid']:
         print(f"  ❌ 质量验证失败: {quality_check['reason']}")
@@ -1834,7 +1968,7 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     # 7. 验证生成内容
     print("🔍 验证生成内容...")
-    validation = validate_generated_content(new_content, current_content)
+    validation = validate_generated_content(final_content, current_content)
 
     if not validation['valid']:
         print(f"  ⚠️ 验证失败: {validation['reason']}")
@@ -1863,7 +1997,7 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         commit = repo.update_file(
             path=file_path,
             message=commit_message,
-            content=new_content,
+            content=final_content,
             sha=content_file.sha,
             branch=branch_name
         )

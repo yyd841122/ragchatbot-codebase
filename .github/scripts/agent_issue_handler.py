@@ -70,6 +70,39 @@ def is_supported_markdown_file(file_path: str) -> bool:
     return is_safe_path(file_path)
 
 
+def is_supported_append_only_config_file(file_path: str) -> bool:
+    """检查是否为支持的 append-only 配置文件
+
+    规则：
+    - 只支持 .gitignore 和 .env.example
+    - 必须在根目录（路径按 / 分隔后只有 1 段）
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 append-only 配置文件
+    """
+    # 统一路径格式
+    normalized = file_path.replace('\\', '/')
+
+    # 提取 basename
+    basename = normalized.split('/')[-1].lower()
+
+    # 检查是否为支持的配置文件
+    supported_config_files = ['.gitignore', '.env.example']
+    if basename not in supported_config_files:
+        return False
+
+    # 必须在根目录（路径按 / 分隔后只有 1 段）
+    if len(normalized.split('/')) != 1:
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
 def get_env_var(var_name: str) -> str:
     """获取环境变量，如果不存在则退出"""
     value = os.getenv(var_name)
@@ -175,18 +208,26 @@ Todo List 要具体、可执行、可验证
 文件路径要基于项目根目录，使用相对路径
 
 **支持的文件类型**：
-- 当前仅支持 Markdown 文档文件（.md）
-- 根目录的 .md 文件（如 `README.md`、`CHANGELOG.md`）
-- 一级子目录的 .md 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ✅ Markdown 文档文件（.md）
+  - 根目录的 .md 文件（如 `README.md`、`CHANGELOG.md`）
+  - 一级子目录的 .md 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ✅ 配置文件（仅 append-only 模式）
+  - `.gitignore` - 在文件末尾追加新的忽略规则
+  - `.env.example` - 在文件末尾追加新的环境变量示例
 
 **路径规则**：
 - 路径按 `/` 分隔后最多 2 段
 - 禁止相对路径跳转（如 `../file.md`）
 - 文件路径必须真实存在于仓库中
 
+**配置文件使用说明**：
+- `.gitignore` 和 `.env.example` 只支持 append-only 模式
+- 不能修改或删除现有内容，只能在末尾追加新内容
+- AI 会自动生成要追加的内容片段
+
 **不支持的文件类型**：
 - 代码文件（.py, .js, .yml 等）
-- 配置文件（.env.example, .gitignore, requirements.txt 等）
+- 其他配置文件（requirements.txt 等）
 
 用简洁的中文描述
 如果信息不足，请明确写"信息不足"，不要编造不存在的实现细节
@@ -313,15 +354,19 @@ def validate_first_file_exists(plan: str, repo) -> tuple[bool, str]:
     if not first_file:
         return False, "计划中未找到文件路径，请检查计划格式"
 
-    # 检查是否为支持的 Markdown 文件
-    if not is_supported_markdown_file(first_file):
+    # 检查是否为支持的文件类型（Markdown 或配置文件）
+    is_markdown = is_supported_markdown_file(first_file)
+    is_config = is_supported_append_only_config_file(first_file)
+
+    if not is_markdown and not is_config:
         return False, f"""文件 `{first_file}` 不在当前支持范围内。
 
 **当前支持的文件类型**：
 - ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
 - ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ✅ 根目录的配置文件（仅 `.gitignore`、`.env.example`，append-only 模式）
 - ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
-- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`）
+- ❌ 不支持其他文件类型（如 `.py`、`requirements.txt`）
 
 **路径规则**：
 - 路径按 `/` 分隔后最多 2 段
@@ -403,8 +448,9 @@ def main() -> None:
 **当前支持的文件类型**：
 - ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
 - ✅ 一级子目录的 `.md` 文件（如 `docs/CODE_QUALITY.md`、`docs/GUIDE.md`）
+- ✅ 根目录的配置文件（仅 `.gitignore`、`.env.example`，append-only 模式）
 - ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
-- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`）
+- ❌ 不支持其他文件类型（如 `.py`、`requirements.txt`）
 
 **路径规则**：
 - 路径按 `/` 分隔后最多 2 段

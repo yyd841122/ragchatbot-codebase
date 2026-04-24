@@ -29,3 +29,14 @@ uploads/
 # OS
 .DS_Store
 Thumbs.db
+# Claude Code local config
+.claude/
+
+# Playwright MCP cache
+.playwright-mcp/
+
+# ChromaDB database
+chroma_db/
+
+# Temporary images
+button-style-check.png

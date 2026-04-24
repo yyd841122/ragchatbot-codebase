@@ -1280,7 +1280,32 @@ def generate_modified_content(
 
 请基于以上信息生成修改后的完整文档内容。
 
-要求：
+**修改要求（必须严格遵守）**：
+
+**1. 最小必要修改原则**：
+- 优先追求小范围局部修改
+- 只修改与 Issue 需求直接相关的内容
+- 不要修改无关的章节和内容
+- 不要重新组织整个文档结构
+
+**2. 禁止写入的内容**：
+- ❌ 不要写入 Issue 的原文
+- ❌ 不要写入 Stage 1 的执行计划
+- ❌ 不要写入 "Zhipu Fix Plan" 模板内容
+- ❌ 不要写入测试说明、执行步骤等元信息
+
+**3. 保持原有格式**：
+- ✅ 保持文档的原有结构和格式
+- ✅ 保持标题层级不变
+- ✅ 保持代码块格式不变
+- ✅ 只修改必要的文字内容
+
+**4. 修改范围建议**：
+- 如果 Issue 要求添加内容：在文档末尾或合适位置追加
+- 如果 Issue 要求修改内容：只修改相关的段落或章节
+- 如果 Issue 要求删除内容：只删除相关的内容
+
+输出要求：
 1. 只返回修改后的完整文档内容
 2. 不要包含解释、不要包含 markdown 代码块标记（\\`\\`\\`）
 3. 直接返回可用的文档内容
@@ -1363,6 +1388,97 @@ def validate_generated_content(
             'valid': False,
             'reason': f'AI 生成内容过短（{new_length} 字符 < 原内容长度 20% {int(original_length * 0.2)} 字符）'
         }
+
+    return {
+        'valid': True,
+        'reason': None
+    }
+
+
+def validate_modification_quality(old_content: str, new_content: str) -> dict:
+    """验证修改质量是否合理
+
+    重点检查：
+    1. 是否包含元信息污染
+    2. 是否破坏原有文档结构
+    3. 修改范围是否合理（辅助检查）
+
+    Args:
+        old_content: 修改前的内容
+        new_content: 修改后的内容
+
+    Returns:
+        dict: {
+            'valid': bool,
+            'reason': str (如果不合法，说明原因)
+        }
+    """
+    # 1. 检查是否包含元信息污染（核心检查）
+    forbidden_patterns = [
+        "测试目标",
+        "测试内容",
+        "执行计划",
+        "Todo List",
+        "风险提示",
+        "下一步",
+        "Issue #",
+        "### Todo List",       # 新增：模板化的 Todo List
+        "### 风险提示",        # 新增：模板化的风险提示
+        "### 下一步",          # 新增：模板化的下一步
+        "Step 1:",              # 新增：步骤标记
+        "Step 2:",              # 新增：步骤标记
+        "Zhipu Fix Plan",
+        "## 🤖 Zhipu",
+        "由 Zhipu AI 生成",
+    ]
+
+    for pattern in forbidden_patterns:
+        if pattern in new_content:
+            return {
+                'valid': False,
+                'reason': f'包含了不应写入的内容：{pattern}'
+            }
+
+    # 2. 检查是否破坏了原有文档结构（核心检查）
+    # 检查关键标题是否被保留
+    old_lines = old_content.split('\n')
+
+    # 提取原文件中的关键标题（# 和 ##）
+    key_headings = []
+    for line in old_lines:
+        line_stripped = line.strip()
+        # 检查一级标题（#）和二级标题（##）
+        if line_stripped.startswith('#') and not line_stripped.startswith('###'):
+            # 提取标题文本（去掉 # 符号）
+            heading = line_stripped.lstrip('#').strip()
+            if heading and len(heading) < 50:  # 只保留长度合理的标题
+                key_headings.append({
+                    'level': '#' if line_stripped.startswith('# ') else '##',
+                    'text': heading
+                })
+
+    # 检查新文件是否保留了这些关键标题
+    if key_headings:
+        for heading_info in key_headings:
+            level = heading_info['level']
+            text = heading_info['text']
+            # 检查新文件是否仍包含这个标题
+            expected_pattern = f"{level} {text}"
+            if expected_pattern not in new_content:
+                return {
+                    'valid': False,
+                    'reason': f'破坏了文档结构，缺少关键标题：{expected_pattern}'
+                }
+
+    # 3. 检查修改范围（辅助检查，不作为唯一标准）
+    old_lines = old_content.split('\n')
+    new_lines = new_content.split('\n')
+    line_diff = abs(len(new_lines) - len(old_lines))
+
+    # 如果修改行数超过阈值，警告（但不强制拦截）
+    if line_diff > 50:
+        # 只记录警告，不返回 False
+        print(f"  ⚠️ 注意：修改范围较大（{line_diff} 行），请确认是否合理")
 
     return {
         'valid': True,
@@ -1656,6 +1772,24 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         }
 
     print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
+
+    # 6.5. 验证修改质量（新增：质量控制）
+    print("🔍 验证修改质量...")
+    quality_check = validate_modification_quality(current_content, new_content)
+
+    if not quality_check['valid']:
+        print(f"  ❌ 质量验证失败: {quality_check['reason']}")
+        reply_message = build_step5_skip_message(file_path, quality_check['reason'])
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复跳过消息")
+        return {
+            'status': 'skipped',
+            'reason': quality_check['reason'],
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print("  ✅ 质量验证通过")
 
     # 7. 验证生成内容
     print("🔍 验证生成内容...")

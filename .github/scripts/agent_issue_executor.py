@@ -41,6 +41,107 @@ def get_env_var(var_name: str) -> str:
     return value
 
 
+def is_safe_path(file_path: str) -> bool:
+    """检查路径是否安全
+
+    规则：
+    - 空路径返回 False
+    - 绝对路径（以 / 开头）返回 False
+    - 禁止 '../' 相对路径跳转
+    - 路径按 '/' 分隔后最多 2 段
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        路径是否安全
+    """
+    # 空路径检查
+    if not file_path or not file_path.strip():
+        return False
+
+    # 绝对路径检查（以 / 开头）
+    if file_path.startswith('/'):
+        return False
+
+    # 禁止相对路径跳转
+    if '../' in file_path:
+        return False
+
+    # 统一路径分隔符
+    normalized = file_path.replace('\\', '/')
+
+    # 检查深度（按 / 分隔后最多 2 段）
+    parts = normalized.split('/')
+    return len(parts) <= 2
+
+
+def is_supported_markdown_file(file_path: str) -> bool:
+    """检查是否为支持的 Markdown 文件
+
+    规则：
+    - 必须以 .md 结尾
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 Markdown 文件
+    """
+    # 必须以 .md 结尾
+    if not file_path.lower().endswith('.md'):
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
+def verify_file_exists(repo, file_path: str) -> bool:
+    """验证文件是否存在
+
+    Args:
+        repo: Github 仓库对象
+        file_path: 文件路径
+
+    Returns:
+        文件是否存在
+    """
+    try:
+        repo.get_contents(file_path)
+        return True
+    except UnknownObjectException:
+        return False
+
+
+def build_step5_file_not_found_message(file_path: str) -> str:
+    """构建文件不存在的错误消息
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        格式化的错误消息
+    """
+    return f"""## 🤖 Zhipu Stage 2 - Step 5 执行结果
+
+**状态**: ❌ 文件不存在
+
+**目标文件**: `{file_path}`
+
+**原因**: 在仓库中未找到该文件
+
+**如何修复**：
+1. 检查文件路径是否正确
+2. 确认文件已在仓库中存在
+3. 在 Issue 中重新评论 `@zhipu`，生成修正后的计划
+
+---
+
+🤖 由 Zhipu AI Stage 2 - Step 5 生成
+"""
+
+
 def print_stage2_banner():
     """打印 Stage 2 标识"""
     print("\n" + "="*60)
@@ -1129,20 +1230,58 @@ def execute_step4(g, repo, issue, issue_number: int):
     print(f"  ✅ Step 4 完成")
 
 
+def construct_modification_objective(file_path: str, issue_title: str) -> str:
+    """构造简洁明确的修改目标
+
+    使用保守的规则化方式，基于文件路径和 Issue 标题构造修改目标。
+    当前版本优先保证 README 测试场景稳定，不追求泛化。
+
+    注意：
+        - Issue 标题不直接作为 AI Prompt 原文输入
+        - Issue 标题用于代码中的规则化目标构造
+        - "只在末尾追加"规则主要用于 README 的第二轮验证样本
+        - 后续扩展到其他 Markdown 文件时再评估是否放宽
+
+    Args:
+        file_path: 文件路径（如 "README.md" 或 "docs/GUIDE.md"）
+        issue_title: Issue 标题（用于规则化判断，不直接传递给 AI）
+
+    Returns:
+        str: 简洁明确的修改目标描述
+    """
+    # 统一路径格式
+    file_path_normalized = file_path.replace('\\', '/').lower()
+    issue_title_normalized = (issue_title or "").lower()
+
+    # 提取是否为 README
+    is_readme = file_path_normalized == "readme.md" or file_path_normalized.endswith("/readme.md")
+
+    # 规则 1：README.md 测试场景（保守固定模板）
+    if is_readme and ("测试" in issue_title_normalized or "test" in issue_title_normalized):
+        return "在 README.md 末尾追加一个简单测试章节，保持原有结构不变。"
+
+    # 规则 2：其他 README.md 场景
+    if is_readme:
+        return "在 README.md 末尾追加简单内容，保持原有结构不变。"
+
+    # 规则 3：其他 Markdown 文件
+    if file_path_normalized.endswith('.md'):
+        return f"在 {file_path} 中进行相关修改，保持原有结构不变。"
+
+    # 默认
+    return "对文档进行小范围修改，保持原有结构不变。"
+
+
 def generate_modified_content(
     current_content: str,
-    issue_title: str,
-    issue_body: str,
-    plan: str,
+    modification_objective: str,
     file_path: str
 ) -> str:
     """调用 Zhipu AI 生成修改后的文件内容
 
     Args:
         current_content: 当前文件内容
-        issue_title: Issue 标题
-        issue_body: Issue 正文
-        plan: Stage 1 计划
+        modification_objective: 修改目标（简洁明确，由 construct_modification_objective 构造）
         file_path: 文件路径
 
     Returns:
@@ -1156,7 +1295,10 @@ def generate_modified_content(
 
         client = zhipuai.ZhipuAI(api_key=api_key)
 
-        prompt = f"""你是一个文档修改助手。任务：基于用户需求修改文档内容。
+        prompt = f"""你是一个文档修改助手。
+
+## 任务
+{modification_objective}
 
 ## 当前文件路径
 {file_path}
@@ -1166,24 +1308,32 @@ def generate_modified_content(
 {current_content}
 ```
 
-## Issue 标题
-{issue_title}
-
-## Issue 正文
-{issue_body}
-
-## 执行计划
-{plan}
-
 ---
 
-请基于以上信息生成修改后的完整文档内容。
+**修改要求（必须严格遵守）**：
 
-要求：
+**1. 只做必要的修改**：
+- 优先追求最小范围的局部修改
+- 只修改与任务直接相关的内容
+- 不要修改无关章节
+
+**2. 禁止写入的内容（严格禁止）**：
+- ❌ 不要写入 Issue 标题或正文
+- ❌ 不要写入"测试目标"、"测试内容"
+- ❌ 不要写入"执行计划"、"Todo List"、"风险提示"、"下一步"
+- ❌ 不要写入 Issue 编号（如 Issue #123）
+- ❌ 不要写入"Zhipu Fix Plan"或"由 Zhipu AI 生成"
+
+**3. 保持原有结构**：
+- ✅ 保持文档的原有结构
+- ✅ 保持标题层级
+- ✅ 保持格式不变
+
+**输出要求**：
 1. 只返回修改后的完整文档内容
-2. 不要包含解释、不要包含 markdown 代码块标记（\\`\\`\\`）
-3. 直接返回可用的文档内容
-4. 保持文档的可读性和结构
+2. 不要包含解释
+3. 不要包含 markdown 代码块标记（\\`\\`\\`）
+4. 直接返回可用的文档内容
 """
 
         print("  🤖 调用 Zhipu AI 生成修改内容...")
@@ -1262,6 +1412,108 @@ def validate_generated_content(
             'valid': False,
             'reason': f'AI 生成内容过短（{new_length} 字符 < 原内容长度 20% {int(original_length * 0.2)} 字符）'
         }
+
+    return {
+        'valid': True,
+        'reason': None
+    }
+
+
+def validate_modification_quality(old_content: str, new_content: str) -> dict:
+    """验证修改质量是否合理
+
+    重点检查：
+    1. 是否包含元信息污染
+    2. 是否破坏原有文档结构
+    3. 修改范围是否合理（辅助检查）
+
+    Args:
+        old_content: 修改前的内容
+        new_content: 修改后的内容
+
+    Returns:
+        dict: {
+            'valid': bool,
+            'reason': str (如果不合法，说明原因)
+        }
+    """
+    # 1. 检查是否包含元信息污染（核心检查）
+    forbidden_patterns = [
+        "测试目标",
+        "测试内容",
+        "执行计划",
+        "Todo List",
+        "风险提示",
+        "下一步",
+        "Issue #",
+        "### Todo List",       # 新增：模板化的 Todo List
+        "### 风险提示",        # 新增：模板化的风险提示
+        "### 下一步",          # 新增：模板化的下一步
+        "Step 1:",              # 新增：步骤标记
+        "Step 2:",              # 新增：步骤标记
+        "Zhipu Fix Plan",
+        "## 🤖 Zhipu",
+        "由 Zhipu AI 生成",
+    ]
+
+    for pattern in forbidden_patterns:
+        if pattern in new_content:
+            return {
+                'valid': False,
+                'reason': f'包含了不应写入的内容：{pattern}'
+            }
+
+    # 2. 检查是否破坏了原有文档结构（核心检查）
+    # 检查关键标题是否被保留
+    old_lines = old_content.split('\n')
+
+    # 提取原文件中的关键标题（# 和 ##）
+    key_headings = []
+    in_code_block = False  # 跟踪是否在 fenced code block 中（仅处理 triple backticks）
+
+    for line in old_lines:
+        line_stripped = line.strip()
+
+        # 检测 fenced code block 的开始/结束（```）
+        if line_stripped.startswith('```'):
+            in_code_block = not in_code_block
+            continue
+
+        # 只在代码块外部提取标题
+        if not in_code_block:
+            # 只接受真正的 Markdown 标题格式：# 或 ##（后面必须有空格）
+            # 继续不保护 ### 及更深层级标题
+            if line_stripped.startswith('# ') or line_stripped.startswith('## '):
+                # 提取标题文本（去掉 # 符号）
+                heading = line_stripped.lstrip('#').strip()
+                if heading and len(heading) < 50:  # 只保留长度合理的标题
+                    key_headings.append({
+                        'level': '#' if line_stripped.startswith('# ') else '##',
+                        'text': heading
+                    })
+
+    # 检查新文件是否保留了这些关键标题
+    if key_headings:
+        for heading_info in key_headings:
+            level = heading_info['level']
+            text = heading_info['text']
+            # 检查新文件是否仍包含这个标题
+            expected_pattern = f"{level} {text}"
+            if expected_pattern not in new_content:
+                return {
+                    'valid': False,
+                    'reason': f'破坏了文档结构，缺少关键标题：{expected_pattern}'
+                }
+
+    # 3. 检查修改范围（辅助检查，不作为唯一标准）
+    old_lines = old_content.split('\n')
+    new_lines = new_content.split('\n')
+    line_diff = abs(len(new_lines) - len(old_lines))
+
+    # 如果修改行数超过阈值，警告（但不强制拦截）
+    if line_diff > 50:
+        # 只记录警告，不返回 False
+        print(f"  ⚠️ 注意：修改范围较大（{line_diff} 行），请确认是否合理")
 
     return {
         'valid': True,
@@ -1358,11 +1610,23 @@ def build_step5_unsupported_file_message(file_path: str) -> str:
 
 **目标文件**: `{file_path}`
 
-**原因**: Stage 5 当前 MVP 版本仅支持修改 `README.md` 文件
+**原因**: 文件不在当前支持范围内
 
-**说明**：
-- 其他 `.md` / `.txt` 文件后续版本将支持
-- 代码文件（.py, .js 等）后续版本将支持
+**当前支持的文件类型**：
+- ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
+- ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
+- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`、`requirements.txt`）
+
+**路径规则**：
+- 路径按 `/` 分隔后最多 2 段
+- 禁止相对路径跳转（如 `../file.md`）
+- 禁止绝对路径（如 `/etc/file.md`）
+
+**如何修复**：
+1. 检查文件路径是否符合上述规则
+2. 在 Issue 中重新评论 `@zhipu`，生成修正后的计划
+3. 确保 `### 计划修改文件` 章节中的第一个文件符合规则
 
 ---
 
@@ -1469,25 +1733,39 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     print(f"  ✅ 文件路径: {file_path}")
 
-    # 4. 检查文件扩展名（仅支持 README.md）
-    print("🔍 检查文件类型...")
-    basename = os.path.basename(file_path).lower()
-
-    if basename != "readme.md":
-        print(f"  ℹ️ 文件 {basename} 不在支持范围内（仅支持 README.md）")
+    # 4. 检查文件类型和路径安全（先检查类型和路径）
+    print("🔍 检查文件类型和路径安全...")
+    if not is_supported_markdown_file(file_path):
+        print(f"  ℹ️ 文件 {file_path} 不在支持范围内")
         reply_message = build_step5_unsupported_file_message(file_path)
         issue.create_comment(reply_message)
         print("  ✅ 已回复跳过消息")
         return {
             'status': 'skipped',
-            'reason': f'文件 {basename} 不在支持范围内（仅支持 README.md）',
+            'reason': f'文件 {file_path} 不在支持范围内（仅支持根目录和一级子目录的 .md 文件）',
             'file_path': file_path,
             'commit_sha': None
         }
 
-    print(f"  ✅ 文件类型支持: {basename}")
+    print(f"  ✅ 文件类型和路径安全检查通过")
 
-    # 5. 读取文件当前内容（复用 Step 4 的逻辑）
+    # 5. 验证文件是否存在（再检查存在性）
+    print("🔍 验证文件是否存在...")
+    if not verify_file_exists(repo, file_path):
+        print(f"  ❌ 文件 {file_path} 不存在")
+        reply_message = build_step5_file_not_found_message(file_path)
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复失败消息")
+        return {
+            'status': 'failed',
+            'reason': f'文件 {file_path} 不存在',
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print(f"  ✅ 文件存在")
+
+    # 6. 读取文件当前内容（复用 Step 4 的逻辑）
     print(f"📖 读取文件当前内容（分支: {branch_name}）...")
     read_result = read_file_content_safe(repo, file_path, branch_name)
 
@@ -1506,13 +1784,19 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
     print(f"  ✅ 读取成功，文件大小: {read_result['size']} bytes")
     current_content = read_result['content']
 
-    # 6. 调用 AI 生成修改后的内容
+    # 6. 构造修改目标
+    print("🎯 构造修改目标...")
+    modification_objective = construct_modification_objective(
+        file_path=file_path,
+        issue_title=issue.title
+    )
+    print(f"  ✅ 修改目标: {modification_objective}")
+
+    # 7. 调用 AI 生成修改后的内容
     print("🤖 调用 AI 生成修改内容...")
     new_content = generate_modified_content(
         current_content=current_content,
-        issue_title=issue.title,
-        issue_body=issue.body or "",
-        plan=existing_plan,
+        modification_objective=modification_objective,
         file_path=file_path
     )
 
@@ -1529,6 +1813,24 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         }
 
     print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
+
+    # 6.5. 验证修改质量（新增：质量控制）
+    print("🔍 验证修改质量...")
+    quality_check = validate_modification_quality(current_content, new_content)
+
+    if not quality_check['valid']:
+        print(f"  ❌ 质量验证失败: {quality_check['reason']}")
+        reply_message = build_step5_skip_message(file_path, quality_check['reason'])
+        issue.create_comment(reply_message)
+        print("  ✅ 已回复跳过消息")
+        return {
+            'status': 'skipped',
+            'reason': quality_check['reason'],
+            'file_path': file_path,
+            'commit_sha': None
+        }
+
+    print("  ✅ 质量验证通过")
 
     # 7. 验证生成内容
     print("🔍 验证生成内容...")

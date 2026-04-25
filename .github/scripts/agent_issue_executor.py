@@ -2084,6 +2084,107 @@ def build_step5_skip_message(file_path: str, reason: str) -> str:
 """
 
 
+def extract_explicit_append_content(
+    issue_body: str,
+    existing_plan: str,
+    file_path: str
+) -> dict:
+    """从 Issue 正文或 Stage 1 计划中提取明确的追加内容
+
+    提取优先级：
+    1. Issue 正文中匹配文件类型的代码块（如 ```gitignore）
+    2. Issue 正文中通用代码块（如 ```）
+    3. Stage 1 plan 中匹配文件类型的代码块
+    4. Stage 1 plan 中通用代码块
+    5. 没有明确内容时，返回 found=False
+
+    Args:
+        issue_body: Issue 正文内容
+        existing_plan: Stage 1 生成的计划内容
+        file_path: 目标文件路径
+
+    Returns:
+        dict: {
+            'found': bool,
+            'content': str,
+            'source': str  # 'issue_body_code_block', 'issue_body_generic_block', 'plan_code_block', 'plan_generic_block'
+        }
+    """
+    import re
+
+    # 确定目标代码块的语言标记
+    file_path_normalized = file_path.replace('\\', '/').lower()
+    basename = file_path_normalized.split('/')[-1]
+
+    if basename == '.gitignore':
+        preferred_lang = 'gitignore'
+    elif basename == '.env.example':
+        preferred_lang = 'env'
+    else:
+        preferred_lang = None
+
+    # 提取函数
+    def extract_code_blocks(text: str) -> list:
+        """从文本中提取所有代码块及其类型"""
+        # 匹配 ```lang ... ``` 格式的代码块
+        pattern = r'```(\w*)?\n(.*?)```'
+        matches = re.findall(pattern, text, re.DOTALL)
+        return matches
+
+    # 优先级 1: Issue 正文中的代码块
+    if issue_body:
+        issue_blocks = extract_code_blocks(issue_body)
+
+        # 优先查找匹配文件类型的代码块
+        if preferred_lang:
+            for lang, content in issue_blocks:
+                if lang.lower() == preferred_lang:
+                    return {
+                        'found': True,
+                        'content': content.strip(),
+                        'source': 'issue_body_code_block'
+                    }
+
+        # 兜底：使用通用代码块
+        for lang, content in issue_blocks:
+            if content.strip():
+                return {
+                    'found': True,
+                    'content': content.strip(),
+                    'source': 'issue_body_generic_block'
+                }
+
+    # 优先级 2: Stage 1 plan 中的代码块
+    if existing_plan:
+        plan_blocks = extract_code_blocks(existing_plan)
+
+        # 优先查找匹配文件类型的代码块
+        if preferred_lang:
+            for lang, content in plan_blocks:
+                if lang.lower() == preferred_lang:
+                    return {
+                        'found': True,
+                        'content': content.strip(),
+                        'source': 'plan_code_block'
+                    }
+
+        # 兜底：使用通用代码块
+        for lang, content in plan_blocks:
+            if content.strip():
+                return {
+                    'found': True,
+                    'content': content.strip(),
+                    'source': 'plan_generic_block'
+                }
+
+    # 优先级 5: 没有找到明确的代码块
+    return {
+        'found': False,
+        'content': '',
+        'source': None
+    }
+
+
 def execute_step5(g, repo, issue, issue_number: int) -> dict:
     """执行 Step 5 文件修改并提交
 
@@ -2233,14 +2334,33 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
             'commit_sha': None
         }
 
-    # 对于配置文件，将 AI 生成的追加内容拼接到文件末尾
+    # 对于配置文件，优先使用 Issue/Plan 中明确的代码块内容
     if is_config:
         print(f"  📝 检测到配置文件，使用 append-only 模式")
         print(f"  📝 AI 生成的追加内容长度: {len(new_content)} 字符")
 
+        # 尝试从 Issue/Plan 中提取明确的代码块内容
+        print("🔍 尝试从 Issue/Plan 中提取明确的追加内容...")
+        explicit_result = extract_explicit_append_content(
+            issue_body=issue.body or "",
+            existing_plan=plan_content,
+            file_path=file_path
+        )
+
+        # 根据提取结果决定使用哪个内容
+        if explicit_result['found']:
+            append_text = explicit_result['content']
+            append_source = explicit_result['source']
+            print(f"  ✅ 发现明确的代码块内容，来源: {append_source}")
+            print(f"  📝 明确内容长度: {len(append_text)} 字符")
+        else:
+            append_text = new_content
+            append_source = "ai_generated"
+            print(f"  ℹ️  未发现明确的代码块，使用 AI 生成内容")
+
         # 验证追加内容是否安全
         print("🔍 验证追加内容安全性...")
-        append_validation = validate_append_content(file_path, new_content, current_content)
+        append_validation = validate_append_content(file_path, append_text, current_content)
 
         if not append_validation['valid']:
             print(f"  ❌ 追加内容验证失败: {append_validation['reason']}")
@@ -2254,10 +2374,10 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
                 'commit_sha': None
             }
 
-        print(f"  ✅ 追加内容安全验证通过")
+        print(f"  ✅ 追加内容安全验证通过 (内容来源: {append_source})")
 
         # 追加内容到文件末尾（使用安全的追加函数）
-        final_content = append_to_file_content(current_content, new_content)
+        final_content = append_to_file_content(current_content, append_text)
 
         print(f"  ✅ 追加后的文件内容长度: {len(final_content)} 字符")
         print(f"  📊 追加了 {len(final_content) - len(current_content)} 字符")

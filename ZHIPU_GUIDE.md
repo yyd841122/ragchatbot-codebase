@@ -7,7 +7,7 @@
 ## 快速导航
 
 ### 我是新用户，首次使用
-→ **[快速开始](#首次使用)**：5 分钟了解核心功能（支持根目录和一级子目录的 .md 文件）
+→ **[快速开始](#首次使用)**：5 分钟了解核心功能（支持 .md 文件和部分配置文件）
 
 ### 我要日常使用
 → **[使用指南](#日常使用)**：完整的 Stage 1-6 操作流程
@@ -30,9 +30,11 @@
 **在使用前，请务必了解当前系统的限制：**
 
 - ✅ **支持根目录和一级子目录的 `.md` 文件修改**
+- ✅ **支持根目录的配置文件 append-only 模式**（仅 `.gitignore`、`.env.example`）
 - ❌ 不支持代码文件（`.py`、`.yml`、`.json` 等）
 - ❌ 不支持多文件批量修改
 - ❌ 不支持更深层的目录（路径超过 2 段，如 `docs/deep/file.md`）
+- ❌ 不支持 `requirements.txt` 等其他配置文件
 - ✅ 必须人工 review 后才能合并
 
 **如果你的需求超出上述限制，当前系统无法完成。**
@@ -45,7 +47,9 @@
 
 1. **理解 Issue**：读取 GitHub Issue 的标题、正文和评论
 2. **生成计划**：自动生成结构化的执行计划（Todo List）
-3. **自动执行**：修改目标 `.md` 文件并创建 Draft Pull Request
+3. **自动执行**：
+   - 修改目标 `.md` 文件
+   - 对配置文件（`.gitignore`、`.env.example`）执行 append-only 操作
 4. **人工确认**：Draft PR 需要人工 review 后才能合并
 
 ### 2. 核心流程（6 步）
@@ -61,13 +65,18 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 
 ### 3. 立即测试
 
-**推荐测试 Issue**（仅限 `README.md` 修改）：
-- 标题：更新 README.md
-- 内容：描述文档修改需求
-- 操作：
+**推荐测试 Issue**（Markdown 文件或配置文件）：
+- **Markdown 文件测试**：
+  - 标题：更新 README.md
+  - 内容：描述文档修改需求
+- **配置文件测试**：
+  - 标题：追加 .gitignore 忽略规则
+  - 内容：在 .gitignore 中追加 `*.log`
+
+**操作步骤**：
   1. 评论 `@zhipu` → 生成计划
-  2. 检查计划的第一个文件是否为 `README.md`
-  3. 评论 `//zhipu-apply` → 自动执行
+  2. 检查计划的第一个文件是否为支持的文件（.md 或 .gitignore/.env.example）
+  3. 评论 `/zhipu-apply` → 自动执行
   4. 等待 Draft PR 创建
   5. 人工 review 并决定是否合并
 
@@ -80,7 +89,7 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 📖 **详细文档**：[ZHIPU_AGENT_USAGE.md](ZHIPU_AGENT_USAGE.md)
 
 #### Step 1：创建 Issue
-明确说明修改目标，**当前仅支持 `README.md` 修改需求**
+明确说明修改目标，**当前支持 .md 文件和配置文件（.gitignore、.env.example）修改需求**
 
 #### Step 2：生成计划
 在 Issue 中评论：`@zhipu`

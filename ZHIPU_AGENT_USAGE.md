@@ -1,6 +1,6 @@
 # Zhipu AI Agent 使用文档
 
-本文档说明如何在当前仓库中使用 Zhipu AI Agent，从 GitHub Issue 生成执行计划、自动修改目标 `.md` 文件，并创建 Draft Pull Request。
+本文档说明如何在当前仓库中使用 Zhipu AI Agent，从 GitHub Issue 生成执行计划、自动修改目标文件（Markdown 文件或配置文件），并创建 Draft Pull Request。
 
 ---
 
@@ -20,6 +20,8 @@
      - Step 3：创建工作分支 `zhipu/issue-{issue_number}`
      - Step 4：预览第一个目标文件
      - Step 5：修改目标文件并创建 commit
+       - 对于 Markdown 文件：AI 生成完整文件内容
+       - 对于配置文件（.gitignore、.env.example）：AI 生成追加内容，程序追加到文件末尾
      - Step 6：自动创建 Draft PR
 
 3. **人工确认**
@@ -81,19 +83,32 @@ Agent 会生成结构化计划，包括问题理解、计划修改文件、Todo 
 
 ### 核心要求
 
-**`### 计划修改文件`章节的第一个文件必须是仓库中真实存在的 `README.md`**
+**`### 计划修改文件`章节的第一个文件必须是仓库中真实存在的文件**
+
+**支持的文件类型**：
+- Markdown 文件（.md）：根目录或一级子目录
+- 配置文件：仅 `.gitignore` 和 `.env.example`（根目录，append-only 模式）
 
 ### 推荐格式
 
+**Markdown 文件**：
 ```markdown
 ### 计划修改文件
 - `README.md` - [更新说明]
+```
+
+**配置文件**：
+```markdown
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+- `.env.example` - 追加环境变量示例
 ```
 
 ### 不建议的写法
 
 - ❌ 不要使用占位路径：`path/to/README.md`
 - ❌ 当前不要把 `.py`、`.yml`、`.txt` 等文件放在第一个文件位置
+- ❌ 配置文件不要放在子目录（如 `config/.gitignore`）
 
 ---
 
@@ -122,10 +137,12 @@ Agent 会生成结构化计划，包括问题理解、计划修改文件、Todo 
 
 当前版本属于 MVP，限制如下：
 
-- **目前只稳定支持 `README.md`**，其他文件类型暂不保证能走通完整链路
+- **Markdown 文件**：支持根目录和一级子目录的 `.md` 文件
+- **配置文件**：仅支持根目录的 `.gitignore` 和 `.env.example`（append-only 模式）
 - **当前只处理第一个目标文件**，不支持多文件批量修改
 - **不能使用占位路径**，否则 Step 4 可能读取失败，Step 5 也无法正确执行
 - **不会自动 merge**，只会创建 Draft PR，必须人工 review 后再决定是否合并
+- **配置文件只能追加**，不能修改或删除现有内容
 - **仓库需预先完成 GitHub Actions 与 PR 创建权限配置**，否则 Step 6 可能失败
 
 ---

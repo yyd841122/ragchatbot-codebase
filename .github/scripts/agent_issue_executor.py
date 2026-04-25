@@ -97,6 +97,39 @@ def is_supported_markdown_file(file_path: str) -> bool:
     return is_safe_path(file_path)
 
 
+def is_supported_append_only_config_file(file_path: str) -> bool:
+    """检查是否为支持的 append-only 配置文件
+
+    规则：
+    - 只支持 .gitignore 和 .env.example
+    - 必须在根目录（路径按 / 分隔后只有 1 段）
+    - 路径必须安全（调用 is_safe_path）
+
+    Args:
+        file_path: 文件路径
+
+    Returns:
+        是否为支持的 append-only 配置文件
+    """
+    # 统一路径格式
+    normalized = file_path.replace('\\', '/')
+
+    # 提取 basename
+    basename = normalized.split('/')[-1].lower()
+
+    # 检查是否为支持的配置文件
+    supported_config_files = ['.gitignore', '.env.example']
+    if basename not in supported_config_files:
+        return False
+
+    # 必须在根目录（路径按 / 分隔后只有 1 段）
+    if len(normalized.split('/')) != 1:
+        return False
+
+    # 路径安全检查
+    return is_safe_path(file_path)
+
+
 def verify_file_exists(repo, file_path: str) -> bool:
     """验证文件是否存在
 
@@ -1256,6 +1289,15 @@ def construct_modification_objective(file_path: str, issue_title: str) -> str:
     # 提取是否为 README
     is_readme = file_path_normalized == "readme.md" or file_path_normalized.endswith("/readme.md")
 
+    # 提取 basename（用于配置文件判断）
+    basename = file_path_normalized.split('/')[-1]
+
+    # 配置文件 append-only 模式
+    if basename == '.gitignore':
+        return "在 .gitignore 文件末尾追加新的忽略规则，保持原有规则不变。只返回要追加的内容，不要返回完整的 .gitignore 文件。"
+    if basename == '.env.example':
+        return "在 .env.example 文件末尾追加新的环境变量示例，保持原有变量不变。只返回要追加的内容，不要返回完整的 .env.example 文件。"
+
     # 规则 1：README.md 测试场景（保守固定模板）
     if is_readme and ("测试" in issue_title_normalized or "test" in issue_title_normalized):
         return "在 README.md 末尾追加一个简单测试章节，保持原有结构不变。"
@@ -1286,6 +1328,8 @@ def generate_modified_content(
 
     Returns:
         str: AI 生成的修改后内容，如果失败则返回空字符串
+             对于配置文件，返回要追加的内容片段（不包含原有内容）
+             对于 Markdown 文件，返回完整的文件内容
     """
     try:
         api_key = os.getenv("ZHIPU_API_KEY")
@@ -1295,7 +1339,54 @@ def generate_modified_content(
 
         client = zhipuai.ZhipuAI(api_key=api_key)
 
-        prompt = f"""你是一个文档修改助手。
+        # 判断是否为 append-only 配置文件
+        file_path_normalized = file_path.replace('\\', '/').lower()
+        basename = file_path_normalized.split('/')[-1]
+        is_append_only_config = basename in ['.gitignore', '.env.example']
+
+        # 对于 append-only 配置文件，使用特殊的 Prompt
+        if is_append_only_config:
+            prompt = f"""你是一个配置文件修改助手。
+
+## 任务
+{modification_objective}
+
+## 配置文件路径
+{file_path}
+
+## 当前配置文件末尾内容（最后 10 行）
+```
+{_get_last_n_lines(current_content, 10)}
+```
+
+---
+
+**修改要求（必须严格遵守）**：
+
+**1. 只生成要追加的内容**：
+- ✅ 只返回要追加到文件末尾的新内容
+- ❌ 不要返回完整的配置文件
+- ❌ 不要包含原有内容
+
+**2. 禁止写入的内容（严格禁止）**：
+- ❌ 不要写入真实的 API 密钥、密码、敏感信息
+- ❌ 不要写入 "示例密钥"、"your-api-key-here" 等占位符
+- ❌ 不要写入 Issue 标题、Issue 编号
+
+**3. 内容格式要求**：
+- **.gitignore**: 每行一个忽略规则，格式如 `*.log` 或 `temp/`
+- **.env.example**: 每行一个环境变量示例，格式如 `VAR_NAME=example_value` 或 `# 注释`
+
+**输出要求**：
+1. 只返回要追加的内容片段
+2. 不要包含解释
+3. 不要包含 markdown 代码块标记（\\`\\`\\`）
+4. 第一行前面不要加换行符
+5. 最后一行后面加一个换行符
+"""
+        else:
+            # Markdown 文件使用原有的 Prompt
+            prompt = f"""你是一个文档修改助手。
 
 ## 任务
 {modification_objective}
@@ -1372,6 +1463,326 @@ def generate_modified_content(
     except Exception as e:
         print(f"  ❌ 调用 Zhipu AI 失败: {e}")
         return ""
+
+
+def _get_last_n_lines(content: str, n: int) -> str:
+    """获取文本的最后 n 行
+
+    Args:
+        content: 文本内容
+        n: 行数
+
+    Returns:
+        最后 n 行的内容
+    """
+    lines = content.split('\n')
+    if len(lines) <= n:
+        return content
+    return '\n'.join(lines[-n:])
+
+
+def validate_append_content(
+    file_path: str,
+    append_text: str,
+    existing_content: str
+) -> dict:
+    """验证 AI 生成的追加内容是否安全
+
+    检查规则：
+    1. 追加内容不能为空
+    2. 追加内容不能包含敏感信息（真实密钥、密码等）
+    3. 追加内容格式必须正确（.gitignore 或 .env.example）
+    4. 追加内容不能重复现有内容（简单检查）
+
+    Args:
+        file_path: 文件路径
+        append_text: AI 生成的追加内容
+        existing_content: 文件现有内容
+
+    Returns:
+        dict: {
+            'valid': bool,
+            'reason': str (如果不合法，说明原因)
+        }
+    """
+    # 统一路径格式
+    file_path_normalized = file_path.replace('\\', '/').lower()
+    basename = file_path_normalized.split('/')[-1]
+
+    # 检查 1：追加内容不能为空
+    if not append_text or not append_text.strip():
+        return {
+            'valid': False,
+            'reason': '追加内容为空'
+        }
+
+    # 检查 2：追加内容不能包含敏感信息
+    # 对于 .gitignore 和 .env.example 使用不同的检测策略
+
+    if basename == '.gitignore':
+        # .gitignore：严格检测，不应该包含任何敏感关键词
+        sensitive_patterns = [
+            'sk-',            # OpenAI API key
+            'api_key',        # 通用 API key
+            'secret',         # 密钥
+            'password',       # 密码
+            'token',          # 令牌
+            'AKID',           # AWS Access Key ID
+            'wjalr_uxto',     # AWS Secret Access Key pattern
+        ]
+
+        append_text_lower = append_text.lower()
+        for pattern in sensitive_patterns:
+            if pattern.lower() in append_text_lower:
+                return {
+                    'valid': False,
+                    'reason': f'追加内容包含敏感信息（检测到关键词: {pattern}）'
+                }
+
+    elif basename == '.env.example':
+        # .env.example：检测变量值是否是真实密钥，而不是变量名
+        # 允许变量名包含敏感词（如 API_KEY=、SECRET_KEY=）
+        # 但检测变量值是否是真实密钥
+
+        lines = append_text.strip().split('\n')
+        for line in lines:
+            line_stripped = line.strip()
+
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+
+            # 解析环境变量行（格式：VAR_NAME=value 或 VAR_NAME=value # comment）
+            if '=' not in line_stripped:
+                continue
+
+            # 分割变量名和值
+            parts = line_stripped.split('=', 1)
+            if len(parts) != 2:
+                continue
+
+            var_name = parts[0].strip()
+            var_value = parts[1].strip()
+
+            # 检查变量名格式：必须以大写字母开头，只包含大写字母、数字、下划线
+            if not var_name:
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名为空'
+                }
+
+            if not var_name[0].isupper():
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名必须以大写字母开头'
+                }
+
+            valid_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_')
+            if not all(c in valid_chars for c in var_name):
+                return {
+                    'valid': False,
+                    'reason': '.env.example 文件格式错误：变量名包含非法字符（只允许大写字母、数字、下划线）'
+                }
+
+            # 移除行尾注释
+            if '#' in var_value:
+                var_value = var_value.split('#')[0].strip()
+
+            # 检测变量值是否是真实密钥
+            # 检测明显的真实密钥模式
+            dangerous_patterns = [
+                ('sk-', 'OpenAI API key'),
+                ('ghp_', 'GitHub personal access token'),
+                ('github_pat_', 'GitHub personal access token (fine-grained)'),
+                ('wjalr_uxto', 'AWS secret key pattern'),
+                ('AKID', 'AWS Access Key ID'),
+                ('AIza', 'Google API key'),
+            ]
+
+            var_value_lower = var_value.lower()
+            for pattern, desc in dangerous_patterns:
+                if pattern.lower() in var_value_lower:
+                    return {
+                        'valid': False,
+                        'reason': f'变量值包含疑似真实密钥（检测到 {desc} 模式）'
+                    }
+
+            # 检测长随机字符串（可能是真实密钥）
+            # 规则：超过 32 个字符，且包含大小写字母、数字、特殊字符
+            if len(var_value) > 32:
+                # 简单启发式：如果看起来像密钥（高熵值）
+                # 包含大写字母、小写字母、数字、特殊字符中的至少 3 种
+                has_upper = any(c.isupper() for c in var_value)
+                has_lower = any(c.islower() for c in var_value)
+                has_digit = any(c.isdigit() for c in var_value)
+                has_special = any(c in '!@#$%^&*()_+-=[]{}|;:,.<>?' for c in var_value)
+
+                complexity = sum([has_upper, has_lower, has_digit, has_special])
+
+                # 如果复杂度高且长度长，可能是真实密钥
+                if complexity >= 3 and not any(x in var_value.lower() for x in ['example', 'test', 'your_', 'dummy', 'placeholder', 'xxx']):
+                    return {
+                        'valid': False,
+                        'reason': '变量值看起来像是真实密钥（长随机字符串），请使用示例值'
+                    }
+
+            # 检测明显的占位符（这些是允许的）
+            allowed_placeholders = [
+                'example',
+                'test',
+                'your_',
+                'dummy',
+                'placeholder',
+                'xxx',
+                'replace',
+                'changeme',
+                '<',
+                '>',
+            ]
+
+            # 如果变量值包含明显的占位符，则允许
+            if any(placeholder in var_value.lower() for placeholder in allowed_placeholders):
+                continue
+
+            # 对于非占位符的长值，给出警告但不拒绝（仅记录）
+            if len(var_value) > 20:
+                # 可能有风险，但不拒绝，让人工 review 决定
+                print(f"  ⚠️ 注意：变量 {var_name} 的值较长（{len(var_value)} 字符），请人工 review 确认")
+
+    # 检查 3：追加内容格式必须正确
+    if basename == '.gitignore':
+        # .gitignore 格式检查
+        lines = append_text.strip().split('\n')
+        for line_num, line in enumerate(lines, 1):
+            line_stripped = line.strip()
+
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+
+            # 检查：是否看起来像环境变量格式
+            # 如果行包含 "=" 且两边都是简单的字母数字下划线，可能是环境变量
+            if '=' in line_stripped and not line_stripped.startswith('#'):
+                parts = line_stripped.split('=', 1)
+                if len(parts) == 2:
+                    left_part = parts[0].strip()
+                    right_part = parts[1].strip()
+
+                    # 检查左边是否是纯变量名格式
+                    if left_part.replace('_', '').replace('-', '').isalnum():
+                        # 检查右边是否也只包含简单字符（没有 .gitignore 常见的通配符）
+                        # .gitignore 通常包含 * ? / 等特殊字符
+                        ignore_special_chars = set('*?[]/\\')
+                        has_ignore_special = any(c in right_part for c in ignore_special_chars)
+
+                        # 如果没有 .gitignore 特殊字符，可能是环境变量
+                        if not has_ignore_special and right_part.replace('_', '').replace('-', '.').isalnum():
+                            return {
+                                'valid': False,
+                                'reason': f'.gitignore 文件格式错误：第 {line_num} 行看起来像是环境变量格式（包含 "="），.gitignore 应该只包含忽略规则'
+                            }
+
+    elif basename == '.env.example':
+        # .env.example 格式检查
+        # 注意：变量名格式检查已经在敏感信息检测部分完成
+        # 这里只检查是否包含 "="
+        lines = append_text.strip().split('\n')
+        for line_num, line in enumerate(lines, 1):
+            line_stripped = line.strip()
+
+            # 跳过空行和注释
+            if not line_stripped or line_stripped.startswith('#'):
+                continue
+
+            # 检查：非空非注释行应该包含 "="（环境变量格式）
+            if '=' not in line_stripped:
+                return {
+                    'valid': False,
+                    'reason': f'.env.example 文件格式错误：第 {line_num} 行不包含 "="，环境变量应该使用 VAR_NAME=value 格式'
+                }
+
+    # 检查 4：追加内容不能重复现有内容（精确行级检查）
+    # 对于 .gitignore，检查追加的规则是否已经存在
+    if basename == '.gitignore':
+        # 将现有内容和追加内容都拆分为行，检查重复
+        existing_lines = set(line.strip() for line in existing_content.split('\n') if line.strip())
+        append_lines = [line.strip() for line in append_text.split('\n') if line.strip()]
+
+        for append_line in append_lines:
+            # 跳过注释行
+            if append_line.startswith('#'):
+                continue
+
+            if append_line in existing_lines:
+                return {
+                    'valid': False,
+                    'reason': f'追加内容与现有内容重复（规则: {append_line}）'
+                }
+    else:
+        # 对于其他文件，使用简单的尾部检查（原有逻辑）
+        if len(existing_content) > 50 and len(append_text) > 50:
+            existing_tail = existing_content[-50:]
+            append_head = append_text[:50]
+            if append_head in existing_tail:
+                return {
+                    'valid': False,
+                    'reason': '追加内容可能与现有内容重复'
+                }
+
+    # 检查 5：追加内容不能过长（防止 AI 失控）
+    append_lines = append_text.split('\n')
+    if len(append_lines) > 100:
+        return {
+            'valid': False,
+            'reason': f'追加内容过长（{len(append_lines)} 行，超过 100 行限制）'
+        }
+
+    # 检查 6：追加内容单行不能过长
+    for line in append_lines:
+        if len(line) > 1000:
+            return {
+                'valid': False,
+                'reason': f'追加内容包含过长的行（{len(line)} 字符，超过 1000 字符限制）'
+            }
+
+    return {
+        'valid': True,
+        'reason': None
+    }
+
+
+def append_to_file_content(existing_content: str, append_text: str) -> str:
+    """安全地将内容追加到文件末尾
+
+    处理逻辑：
+    1. 如果现有内容为空，直接返回追加内容
+    2. 如果现有内容最后一行没有换行符，先添加一个
+    3. 追加新内容
+    4. 确保最终内容以换行符结尾
+
+    Args:
+        existing_content: 文件现有内容
+        append_text: 要追加的内容
+
+    Returns:
+        str: 追加后的完整内容
+    """
+    # 如果现有内容为空，直接返回追加内容
+    if not existing_content or not existing_content.strip():
+        return append_text.rstrip('\n') + '\n'
+
+    # 确保现有内容以换行符结尾
+    if not existing_content.endswith('\n'):
+        existing_content = existing_content + '\n'
+
+    # 追加新内容
+    result = existing_content + append_text
+
+    # 确保最终内容以换行符结尾
+    if not result.endswith('\n'):
+        result = result + '\n'
+
+    return result
 
 
 def validate_generated_content(
@@ -1615,13 +2026,18 @@ def build_step5_unsupported_file_message(file_path: str) -> str:
 **当前支持的文件类型**：
 - ✅ 根目录的 `.md` 文件（如 `README.md`、`CHANGELOG.md`）
 - ✅ 一级子目录的 `.md` 文件（如 `docs/GUIDE.md`、`docs/FAQ.md`）
+- ✅ 根目录的配置文件（仅 `.gitignore`、`.env.example`，append-only 模式）
 - ❌ 不支持更深层的目录（如 `docs/deep/file.md`）
-- ❌ 不支持其他文件类型（如 `.py`、`.env.example`、`.gitignore`、`requirements.txt`）
+- ❌ 不支持其他文件类型（如 `.py`、`requirements.txt`）
 
 **路径规则**：
 - 路径按 `/` 分隔后最多 2 段
 - 禁止相对路径跳转（如 `../file.md`）
 - 禁止绝对路径（如 `/etc/file.md`）
+
+**配置文件使用说明**：
+- `.gitignore` 和 `.env.example` 只支持 append-only 模式
+- 不能修改或删除现有内容，只能在末尾追加新内容
 
 **如何修复**：
 1. 检查文件路径是否符合上述规则
@@ -1735,14 +2151,19 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     # 4. 检查文件类型和路径安全（先检查类型和路径）
     print("🔍 检查文件类型和路径安全...")
-    if not is_supported_markdown_file(file_path):
+
+    # 判断文件类型
+    is_markdown = is_supported_markdown_file(file_path)
+    is_config = is_supported_append_only_config_file(file_path)
+
+    if not is_markdown and not is_config:
         print(f"  ℹ️ 文件 {file_path} 不在支持范围内")
         reply_message = build_step5_unsupported_file_message(file_path)
         issue.create_comment(reply_message)
         print("  ✅ 已回复跳过消息")
         return {
             'status': 'skipped',
-            'reason': f'文件 {file_path} 不在支持范围内（仅支持根目录和一级子目录的 .md 文件）',
+            'reason': f'文件 {file_path} 不在支持范围内（仅支持 .md 文件和 .gitignore/.env.example 配置文件）',
             'file_path': file_path,
             'commit_sha': None
         }
@@ -1812,11 +2233,42 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
             'commit_sha': None
         }
 
-    print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
+    # 对于配置文件，将 AI 生成的追加内容拼接到文件末尾
+    if is_config:
+        print(f"  📝 检测到配置文件，使用 append-only 模式")
+        print(f"  📝 AI 生成的追加内容长度: {len(new_content)} 字符")
+
+        # 验证追加内容是否安全
+        print("🔍 验证追加内容安全性...")
+        append_validation = validate_append_content(file_path, new_content, current_content)
+
+        if not append_validation['valid']:
+            print(f"  ❌ 追加内容验证失败: {append_validation['reason']}")
+            reply_message = build_step5_skip_message(file_path, append_validation['reason'])
+            issue.create_comment(reply_message)
+            print("  ✅ 已回复跳过消息")
+            return {
+                'status': 'skipped',
+                'reason': append_validation['reason'],
+                'file_path': file_path,
+                'commit_sha': None
+            }
+
+        print(f"  ✅ 追加内容安全验证通过")
+
+        # 追加内容到文件末尾（使用安全的追加函数）
+        final_content = append_to_file_content(current_content, new_content)
+
+        print(f"  ✅ 追加后的文件内容长度: {len(final_content)} 字符")
+        print(f"  📊 追加了 {len(final_content) - len(current_content)} 字符")
+    else:
+        # Markdown 文件，使用 AI 生成的完整内容
+        final_content = new_content
+        print(f"  ✅ AI 生成内容长度: {len(new_content)} 字符")
 
     # 6.5. 验证修改质量（新增：质量控制）
     print("🔍 验证修改质量...")
-    quality_check = validate_modification_quality(current_content, new_content)
+    quality_check = validate_modification_quality(current_content, final_content)
 
     if not quality_check['valid']:
         print(f"  ❌ 质量验证失败: {quality_check['reason']}")
@@ -1834,7 +2286,7 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
 
     # 7. 验证生成内容
     print("🔍 验证生成内容...")
-    validation = validate_generated_content(new_content, current_content)
+    validation = validate_generated_content(final_content, current_content)
 
     if not validation['valid']:
         print(f"  ⚠️ 验证失败: {validation['reason']}")
@@ -1863,7 +2315,7 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         commit = repo.update_file(
             path=file_path,
             message=commit_message,
-            content=new_content,
+            content=final_content,
             sha=content_file.sha,
             branch=branch_name
         )

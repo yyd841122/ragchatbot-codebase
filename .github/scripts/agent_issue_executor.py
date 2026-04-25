@@ -2343,7 +2343,7 @@ def execute_step5(g, repo, issue, issue_number: int) -> dict:
         print("🔍 尝试从 Issue/Plan 中提取明确的追加内容...")
         explicit_result = extract_explicit_append_content(
             issue_body=issue.body or "",
-            existing_plan=plan_content,
+            existing_plan=existing_plan or "",
             file_path=file_path
         )
 

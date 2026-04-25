@@ -484,6 +484,17 @@ FALLBACK_VAR=fallback_value
     assert "*.plan_content" not in result7['content'], "❌ 不应该使用 Stage 1 计划的内容"
     print("    ✅ 优先级正确验证")
 
+    # 测试 8：existing_plan 为空字符串时不会报错（bugfix 验证）
+    print("  📝 测试 8：existing_plan 为空字符串时不会报错")
+    issue_body_8 = "请在 .gitignore 中追加 *.log"
+    plan_8 = ""  # 空 existing_plan
+    result8 = extract_explicit_append_content(issue_body_8, plan_8, ".gitignore")
+    # 空 existing_plan 应该不报错，只是找不到代码块
+    assert result8['found'] == False, "❌ 空 existing_plan 应该返回 not found"
+    assert result8['content'] == "", "❌ 内容应该为空"
+    assert result8['source'] is None, "❌ 来源应该为 None"
+    print("    ✅ 空 existing_plan 不报错")
+
     print("  ✅ extract_explicit_append_content() 测试通过\n")
 
 

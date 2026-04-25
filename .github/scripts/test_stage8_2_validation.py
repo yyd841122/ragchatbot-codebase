@@ -23,6 +23,7 @@ from agent_issue_executor import (
     construct_modification_objective,
     validate_append_content,
     append_to_file_content,
+    extract_explicit_append_content,
 )
 from agent_issue_handler import (
     is_safe_path as handler_is_safe_path,
@@ -344,6 +345,148 @@ def test_append_to_file_content():
     print("  ✅ append_to_file_content() 测试通过\n")
 
 
+def test_extract_explicit_append_content():
+    """测试显式内容提取函数"""
+    print("🧪 测试 extract_explicit_append_content()...")
+
+    # 测试 1：从 Issue body 中提取 .gitignore 代码块（优先级最高）
+    print("  📝 测试 1：Issue body 中的 .gitignore 代码块（优先级最高）")
+    issue_body_1 = """
+请追加以下忽略规则：
+```gitignore
+*.stage82.log
+*.temp
+```
+"""
+    plan_1 = "## 计划\n\n### 计划修改文件\n- `.gitignore` - 追加忽略规则"
+    result1 = extract_explicit_append_content(issue_body_1, plan_1, ".gitignore")
+    assert result1['found'] == True, "❌ 应该找到代码块"
+    assert result1['source'] == 'issue_body_code_block', "❌ 应该是 issue_body_code_block"
+    assert "*.stage82.log" in result1['content'], "❌ 应该包含 *.stage82.log"
+    print("    ✅ Issue body .gitignore 代码块正确提取")
+
+    # 测试 2：从 Stage 1 计划中提取 .env.example 代码块（次优先级）
+    print("  📝 测试 2：Stage 1 计划中的 .env.example 代码块（次优先级）")
+    issue_body_2 = "请追加环境变量"
+    plan_2 = """
+## 计划
+
+### 计划修改文件
+- `.env.example` - 追加环境变量
+
+### 执行内容
+```env
+NEW_VARIABLE=example_value
+ANOTHER_VAR=another_value
+```
+"""
+    result2 = extract_explicit_append_content(issue_body_2, plan_2, ".env.example")
+    assert result2['found'] == True, "❌ 应该找到代码块"
+    assert result2['source'] == 'plan_code_block', "❌ 应该是 plan_code_block"
+    assert "NEW_VARIABLE=example_value" in result2['content'], "❌ 应该包含新变量"
+    print("    ✅ Stage 1 计划 .env.example 代码块正确提取")
+
+    # 测试 3：通用代码块提取（无语言标记）
+    print("  📝 测试 3：通用代码块提取（无语言标记）")
+    issue_body_3 = """
+请在 .gitignore 中追加：
+```
+*.log
+*.tmp
+temp/
+```
+"""
+    plan_3 = "## 计划\n\n### 计划修改文件\n- `.gitignore` - 追加忽略规则"
+    result3 = extract_explicit_append_content(issue_body_3, plan_3, ".gitignore")
+    assert result3['found'] == True, "❌ 应该找到代码块"
+    assert result3['source'] == 'issue_body_generic_block', "❌ 应该是 issue_body_generic_block"
+    assert "*.log" in result3['content'], "❌ 应该包含 *.log"
+    print("    ✅ 通用代码块正确提取")
+
+    # 测试 4：多个代码块时选择第一个匹配的
+    print("  📝 测试 4：多个代码块时选择第一个匹配的")
+    issue_body_4 = """
+第一个代码块：
+```python
+print("ignore this")
+```
+
+第二个代码块：
+```gitignore
+*.first
+*.second
+```
+
+第三个代码块：
+```gitignore
+*.third
+```
+"""
+    plan_4 = "## 计划\n\n### 计划修改文件\n- `.gitignore` - 追加忽略规则"
+    result4 = extract_explicit_append_content(issue_body_4, plan_4, ".gitignore")
+    assert result4['found'] == True, "❌ 应该找到代码块"
+    assert "*.first" in result4['content'], "❌ 应该选择第一个匹配的代码块"
+    assert "*.third" not in result4['content'], "❌ 不应该包含第三个代码块"
+    print("    ✅ 多个代码块正确选择第一个")
+
+    # 测试 5：无代码块时返回 not found
+    print("  📝 测试 5：无代码块时返回 not found")
+    issue_body_5 = "请在 .gitignore 中追加 *.log 文件"
+    plan_5 = "## 计划\n\n### 计划修改文件\n- `.gitignore` - 追加 *.log"
+    result5 = extract_explicit_append_content(issue_body_5, plan_5, ".gitignore")
+    assert result5['found'] == False, "❌ 无代码块时应该返回 not found"
+    assert result5['content'] == "", "❌ 内容应该为空"
+    assert result5['source'] is None, "❌ 来源应该为 None"
+    print("    ✅ 无代码块时正确返回 not found")
+
+    # 测试 6：Issue body 空时从 Stage 1 计划提取
+    print("  📝 测试 6：Issue body 空时从 Stage 1 计划提取")
+    issue_body_6 = ""
+    plan_6 = """
+## 计划
+
+### 计划修改文件
+- `.env.example` - 追加环境变量
+
+### 追加内容
+```env
+FALLBACK_VAR=fallback_value
+```
+"""
+    result6 = extract_explicit_append_content(issue_body_6, plan_6, ".env.example")
+    assert result6['found'] == True, "❌ 应该从 Stage 1 计划找到代码块"
+    assert result6['source'] == 'plan_code_block', "❌ 应该是 plan_code_block"
+    assert "FALLBACK_VAR=fallback_value" in result6['content'], "❌ 应该包含回退变量"
+    print("    ✅ 从 Stage 1 计划正确提取")
+
+    # 测试 7：优先级验证（Issue body 优先于 Stage 1 计划）
+    print("  📝 测试 7：优先级验证（Issue body 优先于 Stage 1 计划）")
+    issue_body_7 = """
+```gitignore
+*.issue_body
+```
+"""
+    plan_7 = """
+## 计划
+
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+
+### 追加内容
+```gitignore
+*.plan_content
+```
+"""
+    result7 = extract_explicit_append_content(issue_body_7, plan_7, ".gitignore")
+    assert result7['found'] == True, "❌ 应该找到代码块"
+    assert result7['source'] == 'issue_body_code_block', "❌ Issue body 应该优先于 Stage 1 计划"
+    assert "*.issue_body" in result7['content'], "❌ 应该使用 Issue body 的内容"
+    assert "*.plan_content" not in result7['content'], "❌ 不应该使用 Stage 1 计划的内容"
+    print("    ✅ 优先级正确验证")
+
+    print("  ✅ extract_explicit_append_content() 测试通过\n")
+
+
 if __name__ == "__main__":
     try:
         print("="*60)
@@ -357,6 +500,7 @@ if __name__ == "__main__":
         test_validate_first_file_with_config()
         test_validate_append_content()
         test_append_to_file_content()
+        test_extract_explicit_append_content()
 
         print("="*60)
         print("✅ 所有本地逻辑测试通过")

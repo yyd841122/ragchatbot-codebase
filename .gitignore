@@ -45,3 +45,6 @@ button-style-check.png
 paste-*.ps1
 paste-*.sh
 restart_server.bat
+# Ignore local configuration files
+local_config.json
+local_config.yaml

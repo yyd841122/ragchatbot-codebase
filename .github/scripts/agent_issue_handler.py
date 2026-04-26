@@ -542,6 +542,162 @@ def validate_first_file_exists(plan: str, repo) -> tuple[bool, str]:
         return False, f"文件 `{first_file}` 在仓库中不存在。请重新在 Issue 中评论 `@zhipu` 生成正确的计划。"
 
 
+def extract_plan_append_content(plan: str) -> Optional[str]:
+    """从 Stage 1 plan 的 ### 计划追加内容 章节中提取 fenced code block 内容
+
+    Args:
+        plan: Stage 1 生成的完整计划内容
+
+    Returns:
+        str: 提取的代码块内容，如果未找到则返回 None
+    """
+    if not plan:
+        return None
+
+    # 查找 "### 计划追加内容" 章节
+    lines = plan.split('\n')
+    in_target_section = False
+    code_block_content = []
+    in_code_block = False
+
+    for line in lines:
+        # 检测是否进入目标章节
+        if "### 计划追加内容" in line:
+            in_target_section = True
+            continue
+
+        # 如果进入目标章节，开始提取代码块
+        if in_target_section:
+            # 检测代码块开始
+            if line.strip().startswith('```'):
+                if not in_code_block:
+                    in_code_block = True
+                    continue
+                else:
+                    # 代码块结束
+                    break
+
+            # 如果在代码块内，收集内容
+            if in_code_block:
+                code_block_content.append(line)
+
+            # 遇到下一个章节标题，停止查找
+            if line.strip().startswith('###') and not in_code_block:
+                break
+
+    # 如果找到代码块内容，返回
+    if code_block_content:
+        return '\n'.join(code_block_content).strip()
+
+    return None
+
+
+def validate_plan_append_content_safety(plan: str) -> tuple[bool, str]:
+    """对 Stage 1 plan 中的 append-only 追加内容做轻量安全检查
+
+    只做前置提醒和明显风险拦截。
+    Stage 5 的 validate_append_content() 仍然是最终强校验。
+
+    检查规则：
+    1. 只针对包含 "### 操作类型" 和 "append-only" 的 plan
+    2. 只针对包含 "### 计划追加内容" 的 plan
+    3. 检测常见密钥前缀：sk-、ghp_、github_pat_、AIza
+    4. 允许安全的占位符：your_*、example_*、test_*、dummy、placeholder、xxx
+
+    Args:
+        plan: Stage 1 生成的完整计划内容
+
+    Returns:
+        tuple[bool, str]: (是否通过, 错误信息)
+    """
+    if not plan:
+        return True, ""  # 空 plan 允许通过（后续流程会处理）
+
+    # 检查是否为 append-only 任务
+    if "### 操作类型" not in plan:
+        return True, ""  # 没有 "### 操作类型" 章节，不是 append-only 任务
+
+    if "append-only" not in plan.lower():
+        return True, ""  # 不是 append-only 任务
+
+    # 提取追加内容
+    append_content = extract_plan_append_content(plan)
+
+    if not append_content:
+        # 没有 "### 计划追加内容" 或没有代码块，允许通过（后续流程会处理）
+        return True, ""
+
+    # 转换为小写用于检测
+    append_content_lower = append_content.lower()
+
+    # 检测明显的真实密钥前缀
+    dangerous_patterns = [
+        ('sk-', 'OpenAI API key'),
+        ('ghp_', 'GitHub personal access token'),
+        ('github_pat_', 'GitHub personal access token (fine-grained)'),
+        ('AIza', 'Google API key'),
+    ]
+
+    # 先检查危险前缀（如果有危险前缀，直接拒绝）
+    for pattern, desc in dangerous_patterns:
+        if pattern.lower() in append_content_lower:
+            # 构建详细的错误提示
+            error_msg = f"""## ⚠️ Stage 1 计划验证失败
+
+**检测到疑似真实密钥**
+
+追加内容中包含疑似真实密钥前缀：`{pattern}`（{desc}）
+
+**安全提示**：
+- ⚠️ 请不要把真实密钥写入 Issue、代码或 .env.example
+- ⚠️ 真实密钥应该存储在本地 .env 文件中（已在 .gitignore 中）
+- ⚠️ .env.example 应该只包含安全的占位符
+
+**正确示例**：
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+ZHIPU_API_KEY=your-zhipu-api-key-here
+GITHUB_TOKEN=your_github_token_here
+GOOGLE_API_KEY=your_google_api_key_here
+TEST_KEY=example_value
+```
+
+**请按以下步骤修正**：
+1. 修改 Issue 内容，使用安全的占位符替换真实密钥
+2. 重新评论 `@zhipu` 生成新的计划
+
+---
+🤖 由 Zhipu AI Stage 1 安全校验生成 | {os.getenv('REPO', '')}"""
+            return False, error_msg
+
+    # 如果没有危险前缀，再检查是否包含安全的占位符（作为额外验证）
+    # 注意：这个检查只在调试时有用，实际逻辑是"没有危险前缀就允许"
+    safe_placeholders = [
+        'your_api_key_here',
+        'your-openai-api-key-here',
+        'your-zhipu-api-key-here',
+        'your_',
+        'example_value',
+        'example-key',
+        'placeholder',
+        'test_key',
+        'test-key',
+        'dummy',
+        'changeme',
+        'replace',
+    ]
+
+    # 检查是否包含明显的占位符（仅用于日志，不影响结果）
+    for placeholder in safe_placeholders:
+        if placeholder.lower() in append_content_lower:
+            # 包含明显的占位符，认为是安全的
+            return True, ""
+
+    # 未检测到明显的危险前缀，允许通过
+    # 即使没有明显的占位符，也允许通过（可能是自定义的值）
+    return True, ""
+
+
 def main() -> None:
     """主函数"""
     print("🚀 Zhipu Issue Agent 启动...")
@@ -623,6 +779,17 @@ def main() -> None:
         sys.exit(1)
 
     print("✅ 文件验证通过")
+
+    # 验证 append-only 追加内容的安全性
+    print("🔍 验证追加内容安全性...")
+    is_safe, safety_error = validate_plan_append_content_safety(ai_response)
+    if not is_safe:
+        print(f"❌ 追加内容安全验证失败: 检测到疑似真实密钥", file=sys.stderr)
+        # 在 Issue 中回复错误信息
+        issue.create_comment(safety_error)
+        sys.exit(1)
+
+    print("✅ 追加内容安全验证通过")
 
     try:
         issue.create_comment(ai_response)

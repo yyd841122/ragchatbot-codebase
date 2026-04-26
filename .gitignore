@@ -47,3 +47,7 @@ paste-*.sh
 restart_server.bat
 *.stage82.log
 *.stage83.log
+
+# Personal draft notes
+2套实现方案.md
+QUICKSTART.md

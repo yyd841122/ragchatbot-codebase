@@ -30,6 +30,8 @@ from agent_issue_handler import (
     is_supported_markdown_file as handler_is_supported_markdown_file,
     is_supported_append_only_config_file as handler_is_supported_append_only_config_file,
     validate_first_file_exists,
+    extract_plan_append_content,
+    validate_plan_append_content_safety,
 )
 
 # Mock GitHub Repository 对象
@@ -498,6 +500,186 @@ FALLBACK_VAR=fallback_value
     print("  ✅ extract_explicit_append_content() 测试通过\n")
 
 
+def make_test_plan(operation_type: str, append_content: str) -> str:
+    """构造测试用的 Stage 1 plan
+
+    Args:
+        operation_type: 操作类型（如 "append-only" 或 ""）
+        append_content: 追加内容（会放在代码块中）
+
+    Returns:
+        str: 构造的 plan
+    """
+    if operation_type:
+        return f"""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `.env.example` - 追加环境变量
+
+### 操作类型
+{operation_type}
+
+### 计划追加内容
+```env
+{append_content}
+```
+"""
+    else:
+        return f"""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `README.md` - 更新文档
+
+### Todo List
+- [ ] 更新文档
+"""
+
+
+def test_extract_plan_append_content():
+    """测试从 Stage 1 plan 中提取追加内容"""
+    print("🧪 测试 extract_plan_append_content()...")
+
+    # 测试 1：提取 .gitignore 追加内容
+    result1 = extract_plan_append_content("""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+
+### 操作类型
+append-only
+
+### 计划追加内容
+```gitignore
+*.stage84.log
+*.tmp
+```
+""")
+    assert result1 is not None and "*.stage84.log" in result1 and "*.tmp" in result1
+    print("  ✅ 提取 .gitignore 内容")
+
+    # 测试 2：提取 .env.example 追加内容
+    result2 = extract_plan_append_content("""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `.env.example` - 追加环境变量示例
+
+### 操作类型
+append-only
+
+### 计划追加内容
+```env
+STAGE84_TEST_KEY=example_value
+ANOTHER_KEY=your_api_key_here
+```
+""")
+    assert result2 is not None and "STAGE84_TEST_KEY=example_value" in result2
+    print("  ✅ 提取 .env.example 内容")
+
+    # 测试 3：没有追加内容章节
+    result3 = extract_plan_append_content("""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `README.md` - 更新文档
+
+### Todo List
+- [ ] 更新 README
+""")
+    assert result3 is None
+    print("  ✅ 没有追加内容章节返回 None")
+
+    # 测试 4：有章节但没有代码块
+    result4 = extract_plan_append_content("""
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+
+### 操作类型
+append-only
+
+### 计划追加内容
+*.log
+""")
+    assert result4 is None
+    print("  ✅ 没有代码块返回 None")
+
+    # 测试 5：空 plan
+    result5 = extract_plan_append_content("")
+    assert result5 is None
+    print("  ✅ 空 plan 返回 None")
+
+    print("  ✅ extract_plan_append_content() 测试通过\n")
+
+
+def test_validate_plan_append_content_safety():
+    """测试 Stage 1 追加内容安全校验"""
+    print("🧪 测试 validate_plan_append_content_safety()...")
+
+    # 测试危险前缀（sk-, ghp_, github_pat_, AIza）
+    dangerous_prefixes = [
+        ("sk-", "OPENAI_API_KEY=sk-test-real-secret-value"),
+        ("ghp_", "GITHUB_TOKEN=ghp_xxxxxxxxxxxxx"),
+        ("github_pat_", "GITHUB_PAT=github_pat_xxxxxxxxxxxxx"),
+        ("AIza", "GOOGLE_API_KEY=AIzaxxxxxxxxxxxxx"),
+    ]
+
+    for prefix, content in dangerous_prefixes:
+        plan = make_test_plan("append-only", content)
+        is_valid, error = validate_plan_append_content_safety(plan)
+        assert is_valid == False, f"{prefix} 应该被拒绝"
+        assert prefix in error, f"错误信息应包含 {prefix}"
+        assert "疑似真实密钥" in error, "错误信息应包含提示"
+        print(f"  ✅ {prefix} 前缀正确拒绝")
+
+    # 测试安全占位符
+    safe_placeholders = [
+        "OPENAI_API_KEY=your_openai_api_key_here",
+        "STAGE84_TEST_KEY=example_value",
+        "API_KEY_1=your_api_key_here",
+        "API_KEY_2=test_key",
+        "API_KEY_3=dummy",
+    ]
+
+    for content in safe_placeholders:
+        plan = make_test_plan("append-only", content)
+        is_valid, error = validate_plan_append_content_safety(plan)
+        assert is_valid == True, f"{content} 应该允许"
+        assert error == "", "错误信息应该为空"
+    print("  ✅ 安全占位符正确允许")
+
+    # 测试非 append-only plan
+    plan_non_append = make_test_plan("", "")
+    is_valid, error = validate_plan_append_content_safety(plan_non_append)
+    assert is_valid == True and error == ""
+    print("  ✅ 非 append-only plan 正确跳过")
+
+    # 测试没有追加内容
+    plan_no_append = """
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+
+### 操作类型
+append-only
+"""
+    is_valid, error = validate_plan_append_content_safety(plan_no_append)
+    assert is_valid == True and error == ""
+    print("  ✅ 没有追加内容正确跳过")
+
+    # 测试空 plan
+    is_valid, error = validate_plan_append_content_safety("")
+    assert is_valid == True and error == ""
+    print("  ✅ 空 plan 正确跳过")
+
+    print("  ✅ validate_plan_append_content_safety() 测试通过\n")
+
+
 if __name__ == "__main__":
     try:
         print("="*60)
@@ -512,6 +694,8 @@ if __name__ == "__main__":
         test_validate_append_content()
         test_append_to_file_content()
         test_extract_explicit_append_content()
+        test_extract_plan_append_content()
+        test_validate_plan_append_content_safety()
 
         print("="*60)
         print("✅ 所有本地逻辑测试通过")

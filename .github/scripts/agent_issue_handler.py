@@ -225,6 +225,65 @@ Todo List 要具体、可执行、可验证
 - 不能修改或删除现有内容，只能在末尾追加新内容
 - AI 会自动生成要追加的内容片段
 
+### Append-Only 配置文件计划格式要求
+
+如果计划修改的文件是 `.gitignore` 或 `.env.example`，**必须**按以下格式输出计划：
+
+**示例 1**：修改 .gitignore
+```markdown
+### 计划修改文件
+- `.gitignore` - 追加忽略规则
+
+### 操作类型
+- append-only（追加模式）
+
+### 计划追加内容
+```gitignore
+*.stage82.log
+```
+```
+
+**示例 2**：修改 .env.example
+```markdown
+### 计划修改文件
+- `.env.example` - 追加环境变量示例
+
+### 操作类型
+- append-only（追加模式）
+
+### 计划追加内容
+```env
+STAGE82_TEST_KEY=example_value
+```
+```
+
+**重要要求**：
+1. **必须包含 `### 操作类型` 章节**，明确标注 "append-only"
+2. **必须包含 `### 计划追加内容` 章节**，内容放在代码块中
+3. 代码块语言标记：
+   - `.gitignore` 使用 ```gitignore
+   - `.env.example` 使用 ```env
+4. `.env.example` 的值**必须是安全的占位符**：
+   - ✅ 正确：`API_KEY=your_api_key_here`、`SECRET_KEY=example_value`
+   - ❌ 错误：`API_KEY=sk-xxxx`、`GITHUB_TOKEN=ghp_xxxx`、`GOOGLE_API_KEY=AIzaxxxx`
+5. **安全检测**：如果用户请求追加疑似真实密钥（如 `sk-`、`ghp_`、`github_pat_`、`AIza` 等前缀），**必须在 Stage 1 计划中拒绝**：
+   ```markdown
+   ### 安全判断
+   拒绝执行（包含疑似真实密钥）
+
+   ### 操作类型
+   reject
+
+   ### 计划修改文件
+   无
+
+   ### 计划追加内容
+   无
+
+   ### 拒绝原因
+   检测到疑似真实密钥前缀：sk-。请使用安全的占位符（如 your_api_key_here）。
+   ```
+
 **不支持的文件类型**：
 - 代码文件（.py, .js, .yml 等）
 - 其他配置文件（requirements.txt 等）

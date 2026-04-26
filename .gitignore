@@ -46,3 +46,4 @@ paste-*.ps1
 paste-*.sh
 restart_server.bat
 *.stage82.log
+*.stage83.log

@@ -115,7 +115,7 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 
 **检查项**：
 - [ ] PR 来源正确（`/zhipu-apply` 触发）
-- [ ] 只修改了 `README.md`
+- [ ] 只修改了符合支持范围的文件（Markdown 文件或配置文件）
 - [ ] 修改内容符合 Issue 需求
 - [ ] 无错别字、语法错误
 
@@ -135,8 +135,8 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 
 | 问题 | 常见原因 | 解决方法 |
 |------|---------|---------|
-| **Stage 1 计划验证失败** | 第一个文件不是 `README.md` | 重新评论 `@zhipu`，确保第一个文件是 `README.md` |
-| **Step 4 文件读取失败** | 文件路径错误或文件不存在 | 确保第一个文件是真实存在的 `README.md` |
+| **Stage 1 计划验证失败** | 第一个文件不在支持范围内 | 重新评论 `@zhipu`，确保第一个文件符合支持范围 |
+| **Step 4 文件读取失败** | 文件路径错误或文件不存在 | 确保第一个文件是真实存在的文件 |
 | **Step 6 创建 Draft PR 失败** | GitHub Actions/PR 权限未配置 | 联系仓库管理员确认权限配置 |
 | **没有成功触发** | 评论中没有触发命令 | 确保评论包含 `@zhipu` 或 `/zhipu-apply` |
 
@@ -160,7 +160,7 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 
 - [ ] PR 状态为 Draft（非 "Ready for review"）
 - [ ] 分支名称格式：`zhipu/issue-{issue_number}`
-- [ ] **只修改了 `README.md`**（发现其他文件立即停止）
+- [ ] **只修改了符合支持范围的文件**（Markdown 文件或配置文件）
 - [ ] 修改内容符合 Issue 需求
 - [ ] 无错别字、语法错误
 - [ ] GitHub Actions 无失败
@@ -168,7 +168,7 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 ### 通过标准
 
 必须全部满足：
-- ✅ 只修改 `README.md`
+- ✅ 只修改符合支持范围的文件（Markdown 文件或配置文件）
 - ✅ 修改内容符合 Issue 需求
 - ✅ 无错别字、语法错误
 - ✅ GitHub Actions 无失败
@@ -202,6 +202,7 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 | Stage 8.2 完成 | [STAGE8_2_COMPLETE.md](STAGE8_2_COMPLETE.md) |
 | Stage 8.3 完成 | [STAGE8_3_COMPLETE.md](STAGE8_3_COMPLETE.md) |
 | Stage 8.4 Step 1 完成 | [STAGE8_4_STEP1_COMPLETE.md](STAGE8_4_STEP1_COMPLETE.md) |
+| Stage 8.5 Step 1 边界测试补充 | [commit 17664f4](https://github.com/yyd841122/ragchatbot-codebase/commit/17664f4) |
 
 ### 工作规划
 

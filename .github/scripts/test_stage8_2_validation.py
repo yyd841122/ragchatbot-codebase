@@ -231,6 +231,13 @@ def test_validate_append_content():
     assert "过长" in result7['reason'], "❌ 错误信息应该提示过长"
     print("    ✅ 过长内容正确拒绝")
 
+    # 测试 7.1：内容 100 行边界允许（Stage 8.5 新增）
+    print("  📝 测试 7.1：内容 100 行边界允许")
+    boundary_content_100 = "\n".join([f"line{i}" for i in range(100)])
+    result7_1 = validate_append_content(".gitignore", boundary_content_100, "existing")
+    assert result7_1['valid'] == True, f"❌ 100 行内容应该通过，但: {result7_1['reason']}"
+    print("    ✅ 100 行内容正确通过")
+
     # 测试 8：单行过长应该拒绝
     print("  📝 测试 8：单行过长")
     long_line = "a" * 1001
@@ -238,6 +245,13 @@ def test_validate_append_content():
     assert result8['valid'] == False, "❌ 单行过长应该被拒绝"
     assert "过长的行" in result8['reason'], "❌ 错误信息应该提示单行过长"
     print("    ✅ 单行过长正确拒绝")
+
+    # 测试 8.1：单行 1000 字符边界允许（Stage 8.5 新增）
+    print("  📝 测试 8.1：单行 1000 字符边界允许")
+    boundary_line_1000 = "a" * 1000
+    result8_1 = validate_append_content(".gitignore", boundary_line_1000, "existing")
+    assert result8_1['valid'] == True, f"❌ 1000 字符单行应该通过，但: {result8_1['reason']}"
+    print("    ✅ 1000 字符单行正确通过")
 
     # 测试 9：.gitignore 包含环境变量格式应该拒绝（格式检查）
     print("  📝 测试 9：.gitignore 包含环境变量格式")
@@ -291,12 +305,54 @@ def test_validate_append_content():
     assert "大写字母开头" in result15['reason'], "❌ 错误信息应该提示大写字母开头"
     print("    ✅ 非法变量名正确拒绝")
 
+    # 测试 15.1：.env.example 变量名包含空格应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 15.1：.env.example 变量名包含空格")
+    result15_1 = validate_append_content(".env.example", "API KEY=value", "existing")
+    assert result15_1['valid'] == False, f"❌ 变量名包含空格应该被拒绝"
+    assert "非法字符" in result15_1['reason'] or "大写字母开头" in result15_1['reason'], "❌ 错误信息应该提示非法字符"
+    print("    ✅ 变量名包含空格正确拒绝")
+
+    # 测试 15.2：.env.example 空变量名应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 15.2：.env.example 空变量名")
+    result15_2 = validate_append_content(".env.example", "=value", "existing")
+    assert result15_2['valid'] == False, f"❌ 空变量名应该被拒绝"
+    assert "变量名为空" in result15_2['reason'] or "大写字母开头" in result15_2['reason'], "❌ 错误信息应该提示变量名为空"
+    print("    ✅ 空变量名正确拒绝")
+
+    # 测试 15.3：.env.example 变量名包含点号应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 15.3：.env.example 变量名包含点号")
+    result15_3 = validate_append_content(".env.example", "API.KEY=value", "existing")
+    assert result15_3['valid'] == False, f"❌ 变量名包含点号应该被拒绝"
+    assert "非法字符" in result15_3['reason'], "❌ 错误信息应该提示非法字符"
+    print("    ✅ 变量名包含点号正确拒绝")
+
+    # 测试 15.4：.env.example 变量名包含@符号应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 15.4：.env.example 变量名包含@符号")
+    result15_4 = validate_append_content(".env.example", "API@KEY=value", "existing")
+    assert result15_4['valid'] == False, f"❌ 变量名包含@符号应该被拒绝"
+    assert "非法字符" in result15_4['reason'], "❌ 错误信息应该提示非法字符"
+    print("    ✅ 变量名包含@符号正确拒绝")
+
     # 测试 16：.env.example 非法变量名格式（包含特殊字符）应该拒绝
     print("  📝 测试 16：.env.example 非法变量名（包含 -）")
     result16 = validate_append_content(".env.example", "OpenAI-Key=value", "existing")
     assert result16['valid'] == False, "❌ 非法变量名（包含 -）应该被拒绝"
     assert "非法字符" in result16['reason'], "❌ 错误信息应该提示非法字符"
     print("    ✅ 非法变量名正确拒绝")
+
+    # 测试 16.1：.env.example 多行值应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 16.1：.env.example 多行值")
+    result16_1 = validate_append_content(".env.example", "MULTILINE=line1\nline2\nline3", "existing")
+    # 预期：每行独立验证，第二行和第三行不包含等号，应该被拒绝
+    assert result16_1['valid'] == False, f"❌ 多行值应该被拒绝"
+    print("    ✅ 多行值正确拒绝")
+
+    # 测试 16.2：.gitignore 只有空白字符应该拒绝（Stage 8.5 新增）
+    print("  📝 测试 16.2：.gitignore 只有空白字符")
+    result16_2 = validate_append_content(".gitignore", "   \n\t\n  \n", "existing")
+    assert result16_2['valid'] == False, f"❌ 只有空白字符应该被拒绝"
+    assert "空" in result16_2['reason'], "❌ 错误信息应该提示空"
+    print("    ✅ 只有空白字符正确拒绝")
 
     # 测试 17：.gitignore 重复规则应该拒绝
     print("  📝 测试 17：.gitignore 重复规则")
@@ -676,6 +732,48 @@ append-only
     is_valid, error = validate_plan_append_content_safety("")
     assert is_valid == True and error == ""
     print("  ✅ 空 plan 正确跳过")
+
+    # Stage 8.5 新增：测试多个危险前缀组合
+    print("  📝 测试：多个危险前缀组合")
+    plan_multi_prefix = make_test_plan("append-only", "OPENAI_API_KEY=sk-abc123\nGITHUB_TOKEN=ghp_xyz789")
+    is_valid_multi, error_multi = validate_plan_append_content_safety(plan_multi_prefix)
+    assert is_valid_multi == False, "❌ 多个危险前缀应该被拒绝"
+    # 应该至少检测到一个前缀
+    has_prefix = any(prefix in error_multi for prefix in ["sk-", "ghp_", "github_pat_", "AIza"])
+    assert has_prefix, f"❌ 错误信息应包含至少一个危险前缀，但: {error_multi}"
+    print("    ✅ 多个危险前缀组合正确拒绝")
+
+    # Stage 8.5 新增：测试危险前缀优先于安全占位符
+    print("  📝 测试：危险前缀优先于安全占位符")
+    plan_mixed = make_test_plan("append-only", "API_KEY=sk-xxxxx_your_api_key_here")
+    is_valid_mixed, error_mixed = validate_plan_append_content_safety(plan_mixed)
+    assert is_valid_mixed == False, "❌ 包含危险前缀应该被拒绝（即使包含占位符）"
+    assert "sk-" in error_mixed, "❌ 错误信息应包含 sk-"
+    print("    ✅ 危险前缀优先于安全占位符正确拒绝")
+
+    # Stage 8.5 新增：测试只有空白字符的 plan
+    print("  📝 测试：只有空白字符的 plan")
+    plan_whitespace = "   \n   \n\t\n"
+    is_valid_ws, error_ws = validate_plan_append_content_safety(plan_whitespace)
+    assert is_valid_ws == True, f"❌ 只有空白字符的 plan 应该跳过"
+    assert error_ws == "", "❌ 错误信息应该为空"
+    print("    ✅ 只有空白字符的 plan 正确跳过")
+
+    # Stage 8.5 新增：测试 Markdown 文件修改任务不触发检测
+    print("  📝 测试：Markdown 文件修改任务不触发检测")
+    plan_markdown = """
+## 🤖 Zhipu Fix Plan
+
+### 计划修改文件
+- `README.md` - 更新文档
+
+### Todo List
+- [ ] 更新文档
+"""
+    is_valid_md, error_md = validate_plan_append_content_safety(plan_markdown)
+    assert is_valid_md == True, f"❌ Markdown 文件修改任务应该跳过检测"
+    assert error_md == "", "❌ 错误信息应该为空"
+    print("    ✅ Markdown 文件修改任务正确跳过")
 
     print("  ✅ validate_plan_append_content_safety() 测试通过\n")
 

@@ -1,11 +1,11 @@
-# PR Review Checklist - Stage 8.2 配置文件支持
+# PR Review Checklist - Stage 8.5 边界测试补充
 
-本文档用于 Stage 8.2 Draft PR 的人工 review 检查。
+本文档用于 Stage 8.5 Draft PR 的人工 review 检查。
 
-**适用阶段**：Stage 8.2 完成后的配置文件 append-only 支持阶段
+**适用阶段**：Stage 8.5 完成后的边界测试补充阶段
 **当前支持范围**：Markdown 文件（根目录和一级子目录）+ 配置文件（仅根目录 .gitignore、.env.example）
-**文档版本**：v3.0
-**更新日期**：2026-04-24
+**文档版本**：v3.1
+**更新日期**：2026-04-27
 
 ---
 
@@ -131,7 +131,9 @@ git checkout main
 ### 通过标准（必须全部满足）
 
 - [ ] ✅ PR 来源正确（`/zhipu-apply` 触发）
-- [ ] ✅ 只修改 `README.md`
+- [ ] ✅ 只修改符合支持范围的文件
+  - Markdown 文件：根目录和一级子目录的 `.md` 文件
+  - 配置文件：根目录的 `.gitignore`、`.env.example`（append-only 模式）
 - [ ] ✅ 修改内容符合 Issue 需求
 - [ ] ✅ 无错别字、语法错误
 - [ ] ✅ GitHub Actions 无失败
@@ -139,7 +141,7 @@ git checkout main
 
 ### 不通过标准（发现任一情况）
 
-- ❌ 修改了非 README.md 文件
+- ❌ 修改了不符合支持范围的文件（如代码文件、深层目录文件）
 - ❌ 修改内容与 Issue 需求不符
 - ❌ 存在错别字或语法错误
 - ❌ GitHub Actions 失败
@@ -348,6 +350,35 @@ uv run uvicorn app:app --reload --port 8000
 
 ---
 
+## Stage 8.4 新增检查项（敏感内容前置识别）
+
+### Stage 1 敏感内容检测验证
+
+- [ ] **Stage 1 计划是否包含敏感内容检测**
+  - 如果 Issue 请求追加配置文件内容，检查 Stage 1 计划是否执行了安全检测
+  - 检查 Issue 中是否有 Stage 1 拒绝记录（疑似真实密钥）
+
+- [ ] **敏感内容检测是否正确触发**
+  - 真实密钥前缀（sk-、ghp_、github_pat_、AIza）是否被正确拒绝
+  - 安全占位符（your_api_key_here、example_value）是否被正确允许
+
+---
+
+## Stage 8.5 新增检查项（边界测试补充）
+
+### 边界测试覆盖验证
+
+- [ ] **边界测试是否通过**
+  - `.gitignore` 100 行边界、1000 字符边界是否正常
+  - `.env.example` 变量名格式验证是否正常（空格、空变量名、非法字符）
+  - Stage 1 敏感内容检测边界是否正常（多前缀组合、前缀优先级）
+
+- [ ] **测试覆盖率是否充足**
+  - 39 个测试用例是否全部通过
+  - 边界场景是否充分覆盖
+
+---
+
 ## 相关文档
 
 - **Zhipu Agent 使用指南**：`ZHIPU_AGENT_USAGE.md`
@@ -356,5 +387,5 @@ uv run uvicorn app:app --reload --port 8000
 
 ---
 
-**文档维护**：@yyd841122  
-**最后更新**：2026-04-24
+**文档维护**：@yyd841122
+**最后更新**：2026-04-27

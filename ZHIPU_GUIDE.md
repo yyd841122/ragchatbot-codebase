@@ -199,6 +199,9 @@ Issue → @zhipu → 计划生成 → /zhipu-apply → 自动修改 → Draft PR
 | Stage 6 完成 | [STAGE6_COMPLETE.md](STAGE6_COMPLETE.md) |
 | Stage 7 Task 1 正常路径测试 | [STAGE7_TASK1_TEST_RESULT.md](STAGE7_TASK1_TEST_RESULT.md) |
 | Stage 7 Task 1 异常路径测试 | [STAGE7_TASK1_EXCEPTION_TEST_RESULT.md](STAGE7_TASK1_EXCEPTION_TEST_RESULT.md) |
+| Stage 8.2 完成 | [STAGE8_2_COMPLETE.md](STAGE8_2_COMPLETE.md) |
+| Stage 8.3 完成 | [STAGE8_3_COMPLETE.md](STAGE8_3_COMPLETE.md) |
+| Stage 8.4 Step 1 完成 | [STAGE8_4_STEP1_COMPLETE.md](STAGE8_4_STEP1_COMPLETE.md) |
 
 ### 工作规划
 
